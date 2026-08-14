@@ -5,14 +5,69 @@
 >
 > English: A desktop GUI client for DeepSeek Harness — native window, branded splash animation, DeepSeek design language UI, and a stable startup (includes the rc.5 startup crash fix). Third-party, unofficial.
 
-## 为什么需要它 / Why
+## 下载与安装 / Download & Install
 
-官方 DeepSeek Harness 以 Web 界面 + 命令行方式运行。本客户端把它装进一个原生桌面窗口，提供完整的桌面应用体验：
+前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **双击即用**：原生窗口（Electron），打开即进入 Harness
-- **启动即品牌感**：品牌化启动动画，替代默认的白底文字等待页
-- **界面对齐 DeepSeek 设计语言**：品牌蓝 #4D6BFE、浅色/深色双主题、交互细节打磨
-- **稳定启动**：修复 rc.5 桌面版启动崩溃（--expose-internals 缺失导致的 HMR 服务崩溃）
+- **`dsh-gui-v1.0.0-win-x64.zip`**（Windows 64 位，约 280 MB）
+
+### 安装步骤
+
+1. 解压 zip 到任意目录（建议英文路径，如 `D:\Tools\dsh-gui`）
+2. 双击 **`DeepSeek Harness.exe`**
+3. 首次启动会显示品牌启动动画，几秒后进入主界面
+
+**无需安装 Node.js 或其他任何运行时**——exe 已内置完整运行环境，解压即用。
+
+### 卸载
+
+删除解压目录即可。用户数据（会话、配置）保存在 `%USERPROFILE%\.dsh`，如需彻底清除可一并删除。
+
+## 系统要求 / System requirements
+
+- 操作系统：Windows 10 / 11（64 位）
+- 内存：建议 4 GB 以上
+- 磁盘：解压后约 900 MB
+- **无需 Node.js / npm / pnpm / 任何开发环境**（内置运行时）
+
+## 使用说明 / Usage
+
+### 首次启动
+
+1. 双击 `DeepSeek Harness.exe`
+2. 等待品牌启动动画结束（首次启动需初始化，约 3–10 秒）
+3. 在界面中配置模型服务（设置 → 模型，填入你的 DeepSeek API Key）即可开始对话
+
+### 日常使用
+
+- 本地服务默认运行在 `http://127.0.0.1:3081`（仅本机可访问）
+- 界面语言：简体中文（默认），可在界面内切换
+- 支持浅色 / 深色主题，跟随系统或手动切换
+
+### 端口冲突
+
+如果 3081 端口被占用，可设置环境变量后重启：
+
+```
+DSH_DESKTOP_PORT=3082
+```
+
+### 常见问题 / FAQ
+
+**Q：需要先安装 Node.js 吗？**
+A：不需要。本客户端完全自包含，运行时已内置在 exe 中，解压后双击即可使用。
+
+**Q：杀毒软件提示风险？**
+A：本客户端为第三方构建、未做商业签名，Windows SmartScreen / 杀毒软件可能提示。来源为本仓库 Releases 的安装包可放心使用；也可以选择自行构建（见下文源码构建）。
+
+**Q：启动后白屏 / 无法打开？**
+A：请确认已解压完整（不要直接运行压缩包内的 exe）；首次启动请耐心等待动画结束。仍失败可查看日志 `%APPDATA%\@deepseek-ai\dsh-root\logs\desktop.log`。
+
+**Q：数据存放在哪里？**
+A：用户数据（会话记录、配置、凭据）保存在 `%USERPROFILE%\.dsh`，与官方版本一致。
+
+**Q：如何更新？**
+A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%USERPROFILE%\.dsh` 即可保留数据）。
 
 ## 特性 / Features
 
@@ -26,7 +81,7 @@
 
 <!-- 在此放置截图：主界面、启动动画、深色模式 -->
 
-## 快速开始 / Quick start
+## 面向开发者 / For developers
 
 本仓库包含客户端的三块核心资产：
 
@@ -43,10 +98,10 @@
 └── SECURITY.md                 # 安全与敏感信息说明
 ```
 
-### 应用主题
+### 应用主题（无需改动应用文件）
 
-1. 复制 theme/dsw-override.css 到前端 dist：<profile>/node_modules/@deepseek-ai/dsh-web-frontend/dist/assets/
-2. 在 dist/index.html 的 <head> 中、主 CSS（index-*.css）之后追加：
+1. 复制 `theme/dsw-override.css` 到前端 dist：`<profile>/node_modules/@deepseek-ai/dsh-web-frontend/dist/assets/`
+2. 在 `dist/index.html` 的 `<head>` 中、主 CSS（`index-*.css`）之后追加：
 
 ```html
 <link rel="stylesheet" crossorigin href="/assets/dsw-override.css">
@@ -56,13 +111,18 @@
 
 ### 启动动画与启动修复
 
-详见 splash/launcher-patch.md 与 patches/README.md（涉及 resources/app.asar 解包/重打包，请保留原始备份）。
+详见 `splash/launcher-patch.md` 与 `patches/README.md`（涉及 `resources/app.asar` 解包/重打包，请保留原始备份）。
+
+### 从官方源码构建
+
+本客户端基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（官方，MIT）桌面版构建。从源码构建需要 Node.js 环境（仅构建时需要，运行无需）——此场景才需要 `Install Node.js, then run: pnpm install`。
 
 ## 技术实现 / How it works
 
 | 模块 | 方案 |
 | --- | --- |
 | 桌面窗口 | Electron 原生窗口承载 Harness Web UI |
+| 运行时 | Electron 内置 Node（ELECTRON_RUN_AS_NODE）运行 dsh 服务，完全自包含 |
 | 启动动画 | 纯 CSS 动画的 data: URL 页面，图标运行时内嵌 base64，无外部资源依赖 |
 | 界面主题 | CSS 变量（--dsw-* token）覆盖层，后加载覆盖原设计系统，不破坏组件 |
 | 启动修复 | launcher 补传 --expose-internals；profile 依赖从 junction 改为真实文件；ensureSymlink 兼容真实目录 |
