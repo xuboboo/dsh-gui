@@ -20,6 +20,7 @@ Error: failed to apply loader entry <id> (@deepseek-ai/cordis-plugin-hmr): --exp
 | --- | --- | --- |
 | 0001 | `desktop/lib/main.js` | spawn 参数加入 `--expose-internals` |
 | 0002 | `@deepseek-ai/dsh-app-boot/lib/index.js` | `ensureSymlink` 对已存在的真实目录直接跳过（不再抛错） |
+| 0003 | `desktop/lib/main.js` | 放行 `clipboard-sanitized-write` 权限，修复复制按钮无反应（官方 launcher 拒绝一切权限请求，含剪贴板写入） |
 
 另外还需（脚本化或手动）：
 

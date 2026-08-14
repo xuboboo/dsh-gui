@@ -1,0 +1,12 @@
+--- a/desktop/lib/main.js
++++ b/desktop/lib/main.js
+@@ -453,6 +453,6 @@
+ 		log("desktop", `launcher ${app.getVersion()} on ${process.platform}/${process.arch}`);
+-		session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+-			callback(false);
++		session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
++			callback(permission === "clipboard-sanitized-write");
+ 		});
+-		session.defaultSession.setPermissionCheckHandler(() => false);
++		session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === "clipboard-sanitized-write");
+ 		installMenu();

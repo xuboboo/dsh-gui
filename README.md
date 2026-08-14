@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.0-win-x64.zip`**（Windows 64 位，约 280 MB）
+- **`dsh-gui-v1.0.1-win-x64.zip`**（Windows 64 位，约 280 MB）— v1.0.1 修复复制按钮无反应（剪贴板权限）
 
 ### 安装步骤
 
@@ -75,7 +75,18 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🎬 **品牌启动动画** — logo 呼吸光晕 + 双环加载动画 + 深色渐变背景（纯 CSS，无外部依赖）
 - 🎨 **DeepSeek 设计语言界面** — token 级主题覆盖：品牌蓝主按钮、浅蓝消息气泡、蓝调选中/悬停态、细圆角滚动条、品牌色选区与焦点环、柔和过渡与按压反馈
 - 🔧 **rc.5 启动崩溃修复** — launcher 补传 --expose-internals、profile 依赖落盘、ensureSymlink 兼容真实目录
+- 📋 **复制按钮修复（v1.0.1）** — 放行 `clipboard-sanitized-write` 权限，对话/代码块复制按钮恢复可用
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
+
+## 更新日志 / Changelog
+
+### v1.0.1（2026-08-15）
+
+- 🐛 **修复复制按钮无反应**：官方 launcher 默认拒绝一切权限请求（`setPermissionRequestHandler` 一律 `callback(false)`），导致 `navigator.clipboard.writeText` 被拒、复制按钮静默失效。v1.0.1 放行 `clipboard-sanitized-write` 权限（见 `patches/0003-launcher-clipboard-permission.patch`）。
+
+### v1.0.0（2026-08-14）
+
+- 首个发行版：品牌启动动画、DeepSeek 设计语言主题、rc.5 启动崩溃修复
 
 ## 界面预览 / Preview
 
@@ -94,6 +105,7 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 ├── patches/
 │   ├── 0001-launcher-expose-internals.patch   # 启动修复 1
 │   ├── 0002-app-boot-ensure-symlink.patch     # 启动修复 2
+│   ├── 0003-launcher-clipboard-permission.patch # 复制按钮修复（剪贴板权限）
 │   └── README.md               # rc.5 启动崩溃修复完整方案
 └── SECURITY.md                 # 安全与敏感信息说明
 ```
