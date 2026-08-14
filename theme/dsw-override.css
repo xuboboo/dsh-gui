@@ -1,0 +1,119 @@
+/* ============================================================
+   DeepSeek Harness — 品牌主题覆盖层 (dsw-override.css)
+   对齐 DeepSeek 设计语言：品牌蓝 #4D6BFE、柔和蓝调中性色、
+   圆角与过渡打磨。浅色 / 深色双主题统一生效。
+   追加在 dist 主 CSS 之后加载，同优先级后加载胜出。
+   ============================================================ */
+
+/* ---- 品牌蓝色板：把 --dsw-static-deepseek-* 阶梯对齐 DeepSeek Blue ---- */
+body {
+  --dsw-static-deepseek-50: rgb(238, 241, 255);
+  --dsw-static-deepseek-75: rgb(230, 235, 255);
+  --dsw-static-deepseek-100: rgb(222, 229, 255);
+  --dsw-static-deepseek-200: rgb(198, 210, 254);
+  --dsw-static-deepseek-300: rgb(165, 184, 252);
+  --dsw-static-deepseek-400: rgb(126, 143, 254);
+  --dsw-static-deepseek-450: rgb(101, 122, 254);
+  --dsw-static-deepseek-500: rgb(77, 107, 254);   /* DeepSeek Blue */
+  --dsw-static-deepseek-550: rgb(66, 94, 240);
+  --dsw-static-deepseek-600: rgb(55, 80, 220);
+  --dsw-static-deepseek-700: rgb(44, 64, 176);
+  --dsw-static-deepseek-800: rgb(33, 48, 130);
+  --dsw-static-deepseek-900: rgb(23, 34, 92);
+  --dsw-static-blue-450: rgb(77, 107, 254);
+  --dsw-static-blue-500: rgb(77, 107, 254);
+  --dsw-static-blue-600: rgb(55, 80, 220);
+}
+
+/* ---- 浅色主题：品牌蓝驱动主按钮 / 链接 / 气泡 / 选中态 ---- */
+body:not([data-ds-dark-theme]) {
+  --dsw-alias-brand-primary: var(--dsw-static-deepseek-500);
+  --dsw-alias-brand-text: var(--dsw-static-deepseek-600);
+  --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-button-primary-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-primary-hover: var(--dsw-static-deepseek-600);
+  --dsw-alias-button-primary-dimmed: var(--dsw-static-deepseek-100);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-600);
+  --dsw-alias-button-contrast-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-500);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-100);
+  --dsw-alias-interactive-bg-hover-accent: rgba(77, 107, 254, 0.08);
+  --dsw-alias-interactive-bg-active: rgba(77, 107, 254, 0.12);
+  --dsw-specific-bubble: var(--dsw-static-deepseek-50);
+  --dsw-specific-bubble-highlight: var(--dsw-static-deepseek-100);
+  --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-deepseek-100);
+  --dsw-specific-sidebar-nav-item-active: var(--dsw-static-neutral-bluish-75);
+  --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-60);
+}
+
+/* ---- 深色主题：品牌蓝发光主按钮，蓝调悬停/选中 ---- */
+body[data-ds-dark-theme] {
+  --dsw-alias-brand-primary: var(--dsw-static-deepseek-450);
+  --dsw-alias-brand-text: var(--dsw-static-deepseek-300);
+  --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-button-primary-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-primary-hover: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-primary-dimmed: var(--dsw-static-deepseek-800);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-contrast-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-400);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-800);
+  --dsw-alias-interactive-bg-hover-accent: rgba(77, 107, 254, 0.16);
+  --dsw-alias-interactive-bg-active: rgba(77, 107, 254, 0.22);
+  --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-deepseek-800);
+  --dsw-specific-sidebar-nav-item-active: var(--dsw-static-neutral-bluish-750);
+  --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-800);
+}
+
+/* ---- 交互细节打磨 ---- */
+
+/* 文本选择：品牌蓝 */
+::selection {
+  background: rgba(77, 107, 254, 0.22);
+}
+
+/* 滚动条：细、圆角、蓝调悬停 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 135, 165, 0.4) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(125, 135, 165, 0.38);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(77, 107, 254, 0.55);
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 键盘聚焦：品牌蓝光环（渐进增强，不覆盖组件自带 focus） */
+:focus-visible {
+  outline: 2px solid rgba(77, 107, 254, 0.65);
+  outline-offset: 1px;
+}
+
+/* 可点元素：柔和过渡 + 按压反馈（尊重 reduced-motion） */
+@media (prefers-reduced-motion: no-preference) {
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a,
+  input,
+  textarea,
+  select {
+    transition: background-color 0.16s ease, border-color 0.16s ease,
+      color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+  }
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active {
+    transform: scale(0.975);
+  }
+}

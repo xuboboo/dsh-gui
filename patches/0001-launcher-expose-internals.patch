@@ -1,0 +1,8 @@
+--- a/desktop/lib/main.js
++++ b/desktop/lib/main.js
+@@ -259,7 +259,8 @@
+		const child = spawn(process.execPath, [
++			"--expose-internals",
+			cliPath,
+			"web",
+			"--host",

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeepSeek Harness</title>
+<style>
+html,body{height:100%}
+body{margin:0;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:radial-gradient(1100px 560px at 18% 8%,#14255c 0%,transparent 62%),
+    radial-gradient(900px 520px at 82% 92%,#191248 0%,transparent 58%),
+    radial-gradient(700px 400px at 55% 45%,#0f1c44 0%,transparent 70%),
+    linear-gradient(160deg,#080c1c 0%,#0c1230 48%,#080c1c 100%);
+  color:#e9edff;font:15px/1.6 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{position:relative;text-align:center;animation:rise .9s cubic-bezier(.2,.8,.2,1) both}
+.logo-ring{position:relative;width:136px;height:136px;margin:0 auto 30px}
+.ring{position:absolute;inset:0;border-radius:50%;border:3px solid rgba(77,107,254,.16);border-top-color:#4d6bfe;border-right-color:#8b9bff;animation:spin 1.15s linear infinite}
+.ring.outer{inset:-16px;border-width:1.5px;border-color:rgba(139,155,255,.1);border-bottom-color:transparent;animation-duration:2.6s;animation-direction:reverse}
+.logo{position:absolute;inset:18px;border-radius:50%;overflow:hidden;box-shadow:0 0 42px rgba(77,107,254,.4),0 10px 34px rgba(0,0,0,.5);animation:breathe 2.8s ease-in-out infinite}
+.logo img{width:100%;height:100%;display:block;object-fit:cover}
+h1{margin:0 0 10px;font-size:26px;font-weight:650;letter-spacing:.4px;background:linear-gradient(90deg,#8b9bff,#4d6bfe,#8b9bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.msg{margin:0;color:#9aa8dc;font-size:15px}
+.msg .d{display:inline-block;overflow:hidden;vertical-align:bottom;width:18px;text-align:left}
+.msg .d span{display:inline-block;opacity:0;animation:dot 1.4s infinite}
+.msg .d span:nth-child(2){animation-delay:.2s}
+.msg .d span:nth-child(3){animation-delay:.4s}
+.hint{margin:20px 0 0;color:#5a689e;font-size:12.5px;letter-spacing:.3px}
+.spark{position:fixed;border-radius:50%;pointer-events:none;opacity:.55}
+.spark.s1{width:340px;height:340px;left:-120px;top:-140px;background:radial-gradient(circle,rgba(77,107,254,.22),transparent 70%);animation:drift 9s ease-in-out infinite alternate}
+.spark.s2{width:300px;height:300px;right:-110px;bottom:-120px;background:radial-gradient(circle,rgba(122,92,255,.18),transparent 70%);animation:drift2 11s ease-in-out infinite alternate}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes breathe{0%,100%{box-shadow:0 0 30px rgba(77,107,254,.32),0 10px 34px rgba(0,0,0,.5);transform:scale(1)}50%{box-shadow:0 0 64px rgba(77,107,254,.55),0 10px 34px rgba(0,0,0,.5);transform:scale(1.03)}}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes dot{0%,60%,100%{opacity:0}30%{opacity:1}}
+@keyframes drift{from{transform:translate(0,0)}to{transform:translate(70px,40px)}}
+@keyframes drift2{from{transform:translate(0,0)}to{transform:translate(-60px,-50px)}}
+</style>
+</head>
+<body>
+<div class="spark s1"></div><div class="spark s2"></div>
+<div class="wrap">
+  <div class="logo-ring">
+    <div class="ring outer"></div>
+    <div class="ring"></div>
+    <div class="logo"><!-- 将应用图标（icon.png）放置到本文件同目录，并取消下面 img 的注释 -->
+      <!-- <img alt="" src="icon.png"> -->
+    </div>
+  </div>
+  <h1>DeepSeek Harness</h1>
+  <p class="msg">正在启动本地运行时<span class="d"><span>.</span><span>.</span><span>.</span></span></p>
+  <p class="hint">首次启动可能需要几秒钟</p>
+</div>
+</body>
+</html>

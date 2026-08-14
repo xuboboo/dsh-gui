@@ -1,0 +1,38 @@
+# ---- 敏感信息：永远不要提交 ----
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+*.env.local
+credentials*
+.credentials*
+secrets*
+config.local.json
+
+# ---- 本地数据 / 用户数据 ----
+settings.yaml
+.dsh/
+sessions/
+storages/
+profiles/
+*.log
+logs/
+
+# ---- 依赖与构建 ----
+node_modules/
+dist/
+build/
+*.asar
+
+# ---- 系统文件 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 编辑器 ----
+.idea/
+.vscode/
+*.swp

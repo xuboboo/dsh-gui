@@ -1,0 +1,8 @@
+--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+@@ -376,7 +376,7 @@
+	if (stat !== void 0) {
+-		if (!stat.isSymbolicLink()) throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`);
++		if (!stat.isSymbolicLink()) return;
+		if (readlinkSync(link) === target) return;
+		unlinkSync(link);
