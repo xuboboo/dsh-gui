@@ -26,7 +26,7 @@
 + * All user interaction is native dialogs; set DSH_GUI_DISABLE_AUTO_UPDATE=1
 + * to disable the automatic check (manual check via the Help menu still works).
 + */
-+const DSH_GUI_VERSION = "1.0.2";
++const DSH_GUI_VERSION = "1.0.3";
 +const UPDATE_REPO = "xuboboo/dsh-gui";
 +const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
 +const UPDATE_CHECK_DELAY_MS = 8_000;
