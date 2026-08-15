@@ -485,7 +485,19 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			"$bak = $asar + '.auto-bak'",
  			"try {",
  			"  Copy-Item -LiteralPath $asar -Destination $bak -Force",
-@@ -1046,7 +1155,7 @@ function notifyUpdateResult() {
+@@ -1007,7 +1116,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
+ 			"if ($relaunch) { Start-Process -FilePath '" + exePath + "' -WorkingDirectory '" + dirname(exePath) + "' }",
+ 			"L 'DONE'",
+ 		].join("\r\n");
+-		writeFileSync(scriptPath, script, "utf8");
++		// UTF-8 BOM is required: PowerShell 5.1 parses BOM-less files with the
++		// system ANSI codepage, which garbles non-ASCII paths (e.g. Chinese
++		// usernames) and silently breaks the whole apply pipeline.
++		writeFileSync(scriptPath, "\ufeff" + script, "utf8");
+ 		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
+ 		if (relaunch) args.push("-relaunch");
+ 		const child = spawn("powershell", args, {
+@@ -1046,7 +1158,7 @@ function notifyUpdateResult() {
  			unlinkSync(applied);
  		}
  		// Best-effort cleanup of staging leftovers (backup stays for rollback).
@@ -494,7 +506,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			const p = join(stageDir, name);
  			if (existsSync(p)) { try { unlinkSync(p); } catch { } }
  		}
-@@ -1168,7 +1277,7 @@ else {
+@@ -1168,7 +1280,7 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
