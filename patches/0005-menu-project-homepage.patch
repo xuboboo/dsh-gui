@@ -1,0 +1,11 @@
+--- a/desktop/lib/main.js
++++ b/desktop/lib/main.js
+@@ -414,7 +414,7 @@
+ 				{ type: "separator" },
+ 				{
+ 					label: "项目主页",
+ 					click: () => {
+-						openExternal("https://github.com/deepseek-ai/deepseek-harness");
++						openExternal("https://github.com/xuboboo/dsh-gui");
+ 					}
+ 				}
