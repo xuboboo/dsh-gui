@@ -43,6 +43,14 @@ Error: failed to apply loader entry <id> (@deepseek-ai/cordis-plugin-hmr): --exp
 
 ---
 
+## v1.0.8 附加说明（更新进度弹窗重做）
+
+- 新增补丁 **0008**（`desktop/lib/main.js`）：重做更新下载进度弹窗。
+- 视觉：修复"正方形深色框 + 圆角卡片"两层折叠问题——窗口加 `hasShadow: false` 去掉系统矩形阴影，窗口背景色与卡片渐变底色一致（透明失效时不再露出方框），卡片改为单层扁平深色设计。
+- 进度：curl 通道（实际下载成功的通道）此前完全不上报进度，现通过解析 `curl --progress-bar` 输出实时上报；四个下载通道统一走 `showDownloadProgress`（200ms 节流，文本与百分比同源计算，"3 / 33 MB" 与 9% 不再对不上）。
+
+---
+
 ## v1.0.7 附加说明（重启服务误报修复）
 
 - 新增补丁 **0007**（`desktop/lib/main.js`）：修复"帮助 → 重新启动本地服务"后闪现"运行时已停止 / runtime exited with code 1"错误页的问题。
