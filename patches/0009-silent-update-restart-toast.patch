@@ -187,6 +187,24 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  }
  /**
   * Direct HTTPS download with manual redirect following (up to 5 hops) and
+@@ -697,7 +718,7 @@ async function downloadStream(url, destPath, onProgress) {
+ 			let received = 0;
+ 			response.on("data", (chunk) => {
+ 				received += chunk.length;
+-				if (total > 0) onProgress(received, total);
++				if (onProgress !== undefined && total > 0) onProgress(received, total);
+ 			});
+ 			response.pipe(file);
+ 			file.on("finish", () => { file.close(() => resolve(received)); });
+@@ -728,7 +749,7 @@ function systemProxyUrl() {
+ /** Download with curl.exe (direct or via proxy). Resolves the file size. */
+ function downloadViaCurl(url, dest, proxy, onProgress, total) {
+ 	return new Promise((resolve, reject) => {
+-		const args = ["-sSL", "--progress-bar", "--connect-timeout", "20", "--max-time", "600", "-o", dest];
++		const args = ["-sSL", "--connect-timeout", "20", "--max-time", "600", "-o", dest];
+ 		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
+ 		args.push(url);
+ 		const child = spawn("curl.exe", args, {
 @@ -786,12 +807,9 @@ async function assetDownloadUrl(asset) {
  	return undefined;
  }
@@ -202,27 +220,31 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		// Multi-channel download with live progress: https stream (direct) →
  		// curl direct → curl via system proxy → fetch (system proxy). Every
  		// channel fails fast (20s connect timeout) so the user always gets
-@@ -806,8 +824,7 @@ async function downloadAndInstall(version, asset) {
+@@ -806,10 +824,7 @@ async function downloadAndInstall(version, asset) {
  			// channel 1: https stream (direct), with progress
  			if (downloadedSize === 0) {
  				try {
 -					updateProgress("正在连接下载服务器…", -1);
 -					downloadedSize = await downloadStream(cdnUrl, downloadFile, (received, total) => {
-+						downloadedSize = await downloadStream(cdnUrl, downloadFile, (received, total) => {
- 						showDownloadProgress(received, total);
- 					});
+-						showDownloadProgress(received, total);
+-					});
++						downloadedSize = await downloadStream(cdnUrl, downloadFile);
  					log("updater", `stream direct OK (${downloadedSize} bytes)`);
-@@ -820,8 +837,7 @@ async function downloadAndInstall(version, asset) {
+ 				} catch (error) {
+ 					lastError = error;
+@@ -820,10 +835,7 @@ async function downloadAndInstall(version, asset) {
  			// channel 2: curl direct
  			if (downloadedSize === 0) {
  				try {
 -					updateProgress("直连失败，正在重试…", -1);
 -					downloadedSize = await downloadViaCurl(cdnUrl, downloadFile, undefined, (received, total) => {
-+						downloadedSize = await downloadViaCurl(cdnUrl, downloadFile, undefined, (received, total) => {
- 						showDownloadProgress(received, total);
- 					}, asset.size ?? 0);
+-						showDownloadProgress(received, total);
+-					}, asset.size ?? 0);
++						downloadedSize = await downloadViaCurl(cdnUrl, downloadFile);
  					log("updater", `curl direct OK (${downloadedSize} bytes)`);
-@@ -834,8 +850,7 @@ async function downloadAndInstall(version, asset) {
+ 				} catch (error) {
+ 					lastError = error;
+@@ -834,12 +846,9 @@ async function downloadAndInstall(version, asset) {
  			// channel 3: curl via system proxy
  			if (downloadedSize === 0) {
  				try {
@@ -230,9 +252,14 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 -					const proxy = await systemProxyUrl();
 +						const proxy = await systemProxyUrl();
  					if (proxy !== undefined) {
- 						downloadedSize = await downloadViaCurl(cdnUrl, downloadFile, proxy, (received, total) => {
- 							showDownloadProgress(received, total);
-@@ -854,7 +869,6 @@ async function downloadAndInstall(version, asset) {
+-						downloadedSize = await downloadViaCurl(cdnUrl, downloadFile, proxy, (received, total) => {
+-							showDownloadProgress(received, total);
+-						}, asset.size ?? 0);
++						downloadedSize = await downloadViaCurl(cdnUrl, downloadFile, proxy);
+ 						log("updater", `curl proxy OK (${downloadedSize} bytes, proxy ${proxy})`);
+ 					}
+ 				} catch (error) {
+@@ -854,7 +863,6 @@ async function downloadAndInstall(version, asset) {
  			try {
  				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
  				for (const source of sources) {
@@ -240,7 +267,17 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					const controller = new AbortController();
  					const timer = setTimeout(() => controller.abort(), 3 * 60_000);
  					let response;
-@@ -892,7 +906,6 @@ async function downloadAndInstall(version, asset) {
+@@ -874,8 +882,7 @@ async function downloadAndInstall(version, asset) {
+ 								if (done) break;
+ 								chunks.push(Buffer.from(value));
+ 								received += value.length;
+-								if (total > 0) showDownloadProgress(received, total);
+-							}
++								}
+ 						} else {
+ 							chunks.push(Buffer.from(await response.arrayBuffer()));
+ 						}
+@@ -892,7 +899,6 @@ async function downloadAndInstall(version, asset) {
  			}
  		}
  		if (downloadedSize === 0) throw new Error("下载失败：" + String(lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误")));
@@ -248,7 +285,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const buffer = readFileSync(downloadFile);
  		try { unlinkSync(downloadFile); } catch { }
  
-@@ -935,42 +948,27 @@ async function downloadAndInstall(version, asset) {
+@@ -935,42 +941,27 @@ async function downloadAndInstall(version, asset) {
  			stagedAt: Date.now(),
  		}, null, 2), "utf8");
  		log("updater", `staged ${version} (${asarBytes.length} bytes)`);
@@ -307,7 +344,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	}
  }
  /**
-@@ -1168,7 +1166,7 @@ else {
+@@ -1168,7 +1159,7 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
