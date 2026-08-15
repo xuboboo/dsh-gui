@@ -205,22 +205,115 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
  		args.push(url);
  		const child = spawn("curl.exe", args, {
-@@ -786,12 +807,9 @@ async function assetDownloadUrl(asset) {
+@@ -785,13 +806,84 @@ async function assetDownloadUrl(asset) {
+ 	}
  	return undefined;
  }
- /** Download, verify, and stage the update package; then apply on exit. */
+-/** Download, verify, and stage the update package; then apply on exit. */
 -async function downloadAndInstall(version, asset) {
-+async function downloadAndInstall(version, asset, notifyError = true) {
++/** Download one byte range with curl (direct or via proxy), aborting when a
++ * connection crawls (per-connection throttling is common on proxied links). */
++function downloadRangeViaCurl(url, dest, start, end, proxy) {
++	return new Promise((resolve, reject) => {
++		const args = ["-sSL", "--connect-timeout", "15", "--max-time", "300",
++			"--speed-limit", "8192", "--speed-time", "20",
++			"-r", start + "-" + end, "-o", dest];
++		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
++		args.push(url);
++		const child = spawn("curl.exe", args, {
++			windowsHide: true,
++			env: {
++				...process.env,
++				http_proxy: "", https_proxy: "", HTTP_PROXY: "", HTTPS_PROXY: "", ALL_PROXY: "", all_proxy: "",
++				no_proxy: "*", NO_PROXY: "*",
++			},
++		});
++		let stderr = "";
++		child.stderr.on("data", (d) => { stderr += String(d); });
++		child.on("error", reject);
++		child.on("close", (code) => {
++			if (code === 0 && existsSync(dest)) resolve(statSync(dest).size);
++			else reject(new Error("curl exit " + code + " " + stderr.slice(0, 160)));
++		});
++	});
++}
++/**
++ * Parallel range download: proxied links often throttle each TCP connection
++ * (measured ~11 KB/s per connection vs 166 KB/s with 16 in parallel on the
++ * same link), so the package is split into byte ranges downloaded
++ * concurrently. Each range tries direct first, then the system proxy, and
++ * aborts fast on stalled connections. Falls back to the single-stream
++ * channels by throwing on any chunk failure.
++ */
++async function downloadChunked(url, destFile, total, connections = 12) {
++	const chunkSize = Math.max(1, Math.ceil(total / connections));
++	const ranges = [];
++	for (let start = 0; start < total; start += chunkSize) {
++		ranges.push([start, Math.min(start + chunkSize - 1, total - 1)]);
++	}
++	const proxy = await systemProxyUrl();
++	const chunkDir = join(dirname(destFile), "chunks");
++	mkdirSync(chunkDir, { recursive: true });
  	try {
 -		log("updater", `downloading ${asset.name} (${asset.size ?? "?"} bytes)`);
 -		if (Notification.isSupported()) {
 -			new Notification({ title: "dsh-gui 更新", body: "正在下载 " + asset.name + "…" }).show();
--		}
++		const tryChunk = async (index, start, end) => {
++			const part = join(chunkDir, index + ".part");
++			const attempts = proxy === undefined ? [undefined] : [undefined, proxy];
++			for (const attempt of attempts) {
++				try {
++					await downloadRangeViaCurl(url, part, start, end, attempt);
++					log("updater", `chunk ${index} ok (${end - start + 1} bytes)`);
++					return;
++				} catch (error) {
++					try { unlinkSync(part); } catch { }
++					log("updater", `chunk ${index} ${attempt === undefined ? "direct" : "proxy"} failed: ${String(error)}`);
++				}
++			}
++			throw new Error("chunk " + index + " failed");
++		};
++		await Promise.all(ranges.map((range, index) => tryChunk(index, range[0], range[1])));
++		// Assemble in order and verify the exact size.
++		const chunks = [];
++		for (let i = 0; i < ranges.length; i++) {
++			chunks.push(readFileSync(join(chunkDir, i + ".part")));
+ 		}
++		writeFileSync(destFile, Buffer.concat(chunks));
++		if (statSync(destFile).size !== total) throw new Error("assembled size mismatch");
++		return total;
++	} finally {
++		for (let i = 0; i < ranges.length; i++) {
++			try { unlinkSync(join(chunkDir, i + ".part")); } catch { }
++		}
++	}
++}
++/** Download, verify, and stage the update package; then apply on exit. */
++async function downloadAndInstall(version, asset, notifyError = true) {
++	try {
 +		log("updater", `silent download ${asset.name} (${asset.size ?? "?"} bytes)`);
  		// Multi-channel download with live progress: https stream (direct) →
  		// curl direct → curl via system proxy → fetch (system proxy). Every
  		// channel fails fast (20s connect timeout) so the user always gets
-@@ -806,10 +824,7 @@ async function downloadAndInstall(version, asset) {
+@@ -802,14 +894,24 @@ async function downloadAndInstall(version, asset) {
+ 		let downloadedSize = 0;
+ 		let lastError = null;
+ 		const cdnUrl = await assetDownloadUrl(asset);
+-		if (cdnUrl !== undefined) {
++		// Primary path: parallel range download (proxied links throttle per
++		// connection; parallel ranges measured ~15x faster). Fallback: the
++		// single-stream channels below.
++		if (cdnUrl !== undefined && (asset.size ?? 0) > 8 * 1024 * 1024) {
++			try {
++				downloadedSize = await downloadChunked(cdnUrl, downloadFile, asset.size);
++				log("updater", `chunked download OK (${downloadedSize} bytes)`);
++			} catch (error) {
++				lastError = error;
++				log("updater", `chunked download failed: ${String(error)}`);
++				try { unlinkSync(downloadFile); } catch { }
++			}
++		}
++		if (cdnUrl !== undefined && downloadedSize === 0) {
  			// channel 1: https stream (direct), with progress
  			if (downloadedSize === 0) {
  				try {
@@ -232,7 +325,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `stream direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -820,10 +835,7 @@ async function downloadAndInstall(version, asset) {
+@@ -820,10 +922,7 @@ async function downloadAndInstall(version, asset) {
  			// channel 2: curl direct
  			if (downloadedSize === 0) {
  				try {
@@ -244,7 +337,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `curl direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -834,12 +846,9 @@ async function downloadAndInstall(version, asset) {
+@@ -834,12 +933,9 @@ async function downloadAndInstall(version, asset) {
  			// channel 3: curl via system proxy
  			if (downloadedSize === 0) {
  				try {
@@ -259,7 +352,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						log("updater", `curl proxy OK (${downloadedSize} bytes, proxy ${proxy})`);
  					}
  				} catch (error) {
-@@ -854,7 +863,6 @@ async function downloadAndInstall(version, asset) {
+@@ -854,7 +950,6 @@ async function downloadAndInstall(version, asset) {
  			try {
  				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
  				for (const source of sources) {
@@ -267,7 +360,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					const controller = new AbortController();
  					const timer = setTimeout(() => controller.abort(), 3 * 60_000);
  					let response;
-@@ -874,8 +882,7 @@ async function downloadAndInstall(version, asset) {
+@@ -874,8 +969,7 @@ async function downloadAndInstall(version, asset) {
  								if (done) break;
  								chunks.push(Buffer.from(value));
  								received += value.length;
@@ -277,7 +370,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						} else {
  							chunks.push(Buffer.from(await response.arrayBuffer()));
  						}
-@@ -892,7 +899,6 @@ async function downloadAndInstall(version, asset) {
+@@ -892,7 +986,6 @@ async function downloadAndInstall(version, asset) {
  			}
  		}
  		if (downloadedSize === 0) throw new Error("下载失败：" + String(lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误")));
@@ -285,7 +378,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const buffer = readFileSync(downloadFile);
  		try { unlinkSync(downloadFile); } catch { }
  
-@@ -935,42 +941,27 @@ async function downloadAndInstall(version, asset) {
+@@ -935,42 +1028,27 @@ async function downloadAndInstall(version, asset) {
  			stagedAt: Date.now(),
  		}, null, 2), "utf8");
  		log("updater", `staged ${version} (${asarBytes.length} bytes)`);
@@ -344,7 +437,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	}
  }
  /**
-@@ -1168,7 +1159,7 @@ else {
+@@ -1168,7 +1246,7 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
