@@ -53,6 +53,11 @@ Error: failed to apply loader entry <id> (@deepseek-ai/cordis-plugin-hmr): --exp
 - 移除：下载进度弹窗（进度仅在日志记录）、下载开始/完成的系统通知、更新前的"发现新版本"确认框（自动检查与手动检查均静默，手动检查失败才弹错误框）。
 - 修复：before-quit 检查的是 `app.asar` 而暂存文件实际为 `payload.asar`，导致"稍后重启"退出时从不生效——改为 `isUpdateStaged()` 检查。
 - 新增 `alreadyStaged()`：已暂存同版本时不再重复下载，直接再次弹出提示条。
+- **关键修复（"立即重启"终于可用）**：
+  1. 应用脚本（apply-update.ps1）加 **UTF-8 BOM**（PS 5.1 无 BOM 按 GBK 解析中文路径会乱码）；
+  2. 修正脚本内 applied.txt 行的转义错误（原生成 `('' + version + '')` 是 PowerShell 解析错误，整个脚本直接失败）；
+  3. 修正 `asarTarget` 路径（`../../resources/app.asar` 在 asar 虚拟目录下解析错误，应为 `../../../app.asar`）；
+  4. **实测发现：Electron 在 Windows 退出时会杀死其派生的子进程（Job Object），辅助脚本永远不会执行**——改为 `applyUpdateAndRelaunch()`：主进程原地 `copyFileSync` 覆盖 `app.asar`（实测可行）+ `app.relaunch()` 重启；before-quit 退出时应用同样原地覆盖；辅助脚本仅作兜底。
 
 ---
 
