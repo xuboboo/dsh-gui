@@ -10,10 +10,13 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  const UPDATE_REPO = "xuboboo/dsh-gui";
  const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
  const UPDATE_CHECK_DELAY_MS = 8_000;
-@@ -438,6 +438,17 @@ function writeUpdateState(state) {
- function isUpdateStaged() {
- 	return existsSync(join(app.getPath("userData"), "dsh-gui-update", "payload.asar"));
+@@ -436,7 +436,18 @@ function writeUpdateState(state) {
  }
+ /** Whether an update is currently staged and applied by the helper script. */
+ function isUpdateStaged() {
+-	return existsSync(join(app.getPath("userData"), "dsh-gui-update", "payload.asar"));
++	return existsSync(join(app.getPath("userData"), "dsh-gui-update", "payload.bin"));
++}
 +/** Whether the given version is already downloaded and staged. */
 +function alreadyStaged(version) {
 +	try {
@@ -24,10 +27,9 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +	} catch {
 +		return false;
 +	}
-+}
+ }
  /** Fetch helper with timeout. */
  async function fetchJson(url, timeoutMs = 15_000) {
- 	const controller = new AbortController();
 @@ -533,6 +544,10 @@ async function checkForUpdate(force = false) {
  	if (!force && state.ignoredVersion === remote) return false;
  	const asset = asarUpdateAsset(release, remote);
@@ -39,7 +41,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const answer = await showBrandDialog({
  			title: "发现新版本",
  			message: "dsh-gui 新版本 v" + remote + "（当前 v" + DSH_GUI_VERSION + "）",
-@@ -548,30 +563,14 @@ async function checkForUpdate(force = false) {
+@@ -548,30 +563,38 @@ async function checkForUpdate(force = false) {
  		}
  		return false;
  	}
@@ -55,29 +57,51 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 -			message: "当前版本 v" + DSH_GUI_VERSION + " → v" + remote,
 -			detail: notes + "\n\n更新包约 " + Math.max(1, Math.round((asset.size ?? 0) / 1024 / 1024)) + " MB。",
 -			buttons: ["立即更新", "忽略此版本", "稍后"],
--			primaryIndex: 0,
--			cancelId: 2,
--		});
--		choice = answer;
--	}
--	if (choice === 1) {
--		state.ignoredVersion = remote;
--		writeUpdateState(state);
--		return false;
 +	// Silent background upgrade: download and stage without any prompt; the
 +	// user is only asked (in-app toast) whether to restart now or later.
++	if (updateInFlight) {
++		log("updater", `download already in progress for ${remote}`);
++		if (force) {
++			await showBrandDialog({
++				title: "检查更新",
++				message: "正在下载新版本 v" + remote + "…",
++				detail: "下载完成后会在左下角弹出重启提示。",
++				buttons: ["知道了"],
++				primaryIndex: 0,
++				cancelId: 0,
++			});
++		}
++		return true;
++	}
 +	if (alreadyStaged(remote)) {
 +		log("updater", `update ${remote} already staged`);
 +		showRestartToast(remote);
 +		return true;
++	}
++	if (force) {
++		await showBrandDialog({
++			title: "发现新版本",
++			message: "v" + DSH_GUI_VERSION + " → v" + remote,
++			detail: "正在后台下载更新包，完成后会在左下角弹出重启提示。",
++			buttons: ["知道了"],
+ 			primaryIndex: 0,
+-			cancelId: 2,
++			cancelId: 0,
+ 		});
+-		choice = answer;
  	}
+-	if (choice === 1) {
+-		state.ignoredVersion = remote;
+-		writeUpdateState(state);
+-		return false;
+-	}
 -	if (choice !== 0) return false;
 -	void downloadAndInstall(remote, asset);
 +	void downloadAndInstall(remote, asset, force);
  	return true;
  }
  
-@@ -599,47 +598,69 @@ function showBrandDialog(opts) {
+@@ -599,47 +622,69 @@ function showBrandDialog(opts) {
  		noLink: true,
  	}).then(({ response }) => response);
  }
@@ -187,7 +211,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  }
  /**
   * Direct HTTPS download with manual redirect following (up to 5 hops) and
-@@ -697,7 +718,7 @@ async function downloadStream(url, destPath, onProgress) {
+@@ -697,7 +742,7 @@ async function downloadStream(url, destPath, onProgress) {
  			let received = 0;
  			response.on("data", (chunk) => {
  				received += chunk.length;
@@ -196,7 +220,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			});
  			response.pipe(file);
  			file.on("finish", () => { file.close(() => resolve(received)); });
-@@ -728,7 +749,7 @@ function systemProxyUrl() {
+@@ -728,7 +773,7 @@ function systemProxyUrl() {
  /** Download with curl.exe (direct or via proxy). Resolves the file size. */
  function downloadViaCurl(url, dest, proxy, onProgress, total) {
  	return new Promise((resolve, reject) => {
@@ -205,7 +229,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
  		args.push(url);
  		const child = spawn("curl.exe", args, {
-@@ -785,13 +806,84 @@ async function assetDownloadUrl(asset) {
+@@ -785,13 +830,87 @@ async function assetDownloadUrl(asset) {
  	}
  	return undefined;
  }
@@ -289,13 +313,16 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +	}
 +}
 +/** Download, verify, and stage the update package; then apply on exit. */
++let updateInFlight = false;
 +async function downloadAndInstall(version, asset, notifyError = true) {
++	if (updateInFlight) return;
++	updateInFlight = true;
 +	try {
 +		log("updater", `silent download ${asset.name} (${asset.size ?? "?"} bytes)`);
  		// Multi-channel download with live progress: https stream (direct) →
  		// curl direct → curl via system proxy → fetch (system proxy). Every
  		// channel fails fast (20s connect timeout) so the user always gets
-@@ -802,14 +894,24 @@ async function downloadAndInstall(version, asset) {
+@@ -802,14 +921,24 @@ async function downloadAndInstall(version, asset) {
  		let downloadedSize = 0;
  		let lastError = null;
  		const cdnUrl = await assetDownloadUrl(asset);
@@ -325,7 +352,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `stream direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -820,10 +922,7 @@ async function downloadAndInstall(version, asset) {
+@@ -820,10 +949,7 @@ async function downloadAndInstall(version, asset) {
  			// channel 2: curl direct
  			if (downloadedSize === 0) {
  				try {
@@ -337,7 +364,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `curl direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -834,12 +933,9 @@ async function downloadAndInstall(version, asset) {
+@@ -834,12 +960,9 @@ async function downloadAndInstall(version, asset) {
  			// channel 3: curl via system proxy
  			if (downloadedSize === 0) {
  				try {
@@ -352,7 +379,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						log("updater", `curl proxy OK (${downloadedSize} bytes, proxy ${proxy})`);
  					}
  				} catch (error) {
-@@ -854,7 +950,6 @@ async function downloadAndInstall(version, asset) {
+@@ -854,7 +977,6 @@ async function downloadAndInstall(version, asset) {
  			try {
  				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
  				for (const source of sources) {
@@ -360,7 +387,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					const controller = new AbortController();
  					const timer = setTimeout(() => controller.abort(), 3 * 60_000);
  					let response;
-@@ -874,8 +969,7 @@ async function downloadAndInstall(version, asset) {
+@@ -874,8 +996,7 @@ async function downloadAndInstall(version, asset) {
  								if (done) break;
  								chunks.push(Buffer.from(value));
  								received += value.length;
@@ -370,7 +397,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						} else {
  							chunks.push(Buffer.from(await response.arrayBuffer()));
  						}
-@@ -892,7 +986,6 @@ async function downloadAndInstall(version, asset) {
+@@ -892,7 +1013,6 @@ async function downloadAndInstall(version, asset) {
  			}
  		}
  		if (downloadedSize === 0) throw new Error("下载失败：" + String(lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误")));
@@ -378,7 +405,17 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const buffer = readFileSync(downloadFile);
  		try { unlinkSync(downloadFile); } catch { }
  
-@@ -935,42 +1028,27 @@ async function downloadAndInstall(version, asset) {
+@@ -928,49 +1048,38 @@ async function downloadAndInstall(version, asset) {
+ 		// Stage the update.
+ 		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
+ 		mkdirSync(stageDir, { recursive: true });
+-		writeFileSync(join(stageDir, "payload.asar"), asarBytes);
++		// NOTE: never name the staged payload *.asar — Electron's fs layer
++	// intercepts any path ending in .asar and rejects it as an invalid package.
++	writeFileSync(join(stageDir, "payload.bin"), asarBytes);
+ 		writeFileSync(join(stageDir, "manifest.json"), JSON.stringify({
+ 			version,
+ 			from: DSH_GUI_VERSION,
  			stagedAt: Date.now(),
  		}, null, 2), "utf8");
  		log("updater", `staged ${version} (${asarBytes.length} bytes)`);
@@ -434,10 +471,30 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +				cancelId: 0,
 +			});
 +		}
++	} finally {
++		updateInFlight = false;
  	}
  }
  /**
-@@ -1168,7 +1246,7 @@ else {
+@@ -992,7 +1101,7 @@ function scheduleApplyOnExit(version, relaunch = false) {
+ 			"Start-Sleep -Seconds 3",
+ 			"$asar = '" + asarTarget + "'",
+ 			"$stageDir = '" + stageDir + "'",
+-			"$stage = '" + join(stageDir, "payload.asar") + "'",
++			"$stage = '" + join(stageDir, "payload.bin") + "'",
+ 			"$bak = $asar + '.auto-bak'",
+ 			"try {",
+ 			"  Copy-Item -LiteralPath $asar -Destination $bak -Force",
+@@ -1046,7 +1155,7 @@ function notifyUpdateResult() {
+ 			unlinkSync(applied);
+ 		}
+ 		// Best-effort cleanup of staging leftovers (backup stays for rollback).
+-		for (const name of ["manifest.json", "payload.asar", "apply.log"]) {
++		for (const name of ["manifest.json", "payload.bin", "apply.log"]) {
+ 			const p = join(stageDir, name);
+ 			if (existsSync(p)) { try { unlinkSync(p); } catch { } }
+ 		}
+@@ -1168,7 +1277,7 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
