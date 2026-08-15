@@ -1,0 +1,578 @@
+--- a/desktop/lib/main.js
++++ b/desktop/lib/main.js
+@@ -1,10 +1,10 @@
+ import { createRequire } from "node:module";
+ import { spawn } from "node:child_process";
+-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
++import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+ import { dirname, join } from "node:path";
+ import { createInterface } from "node:readline";
+ import { fileURLToPath } from "node:url";
+-import { BrowserWindow, Menu, app, session, shell } from "electron";
++import { BrowserWindow, Menu, app, dialog, Notification, session, shell } from "electron";
+ //#region src/runtime.ts
+ /** Readiness line prefix printed by the Web profile after its Loader settles. */
+ const READY_PREFIX = "dsh web: ";
+@@ -359,6 +359,519 @@ async function restartHarness() {
+ 		await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail));
+ 	}
+ }
++//#region src/updater.ts
++/**
++ * dsh-gui self-updater: checks GitHub Releases for a newer dsh-gui version,
++ * downloads the asar-only update package, verifies it (sha256 digest from the
++ * GitHub API, size, and zip structure), stages it, and applies it through a
++ * detached helper script after the app exits (backup + replace + relaunch).
++ * All user interaction is native dialogs; set DSH_GUI_DISABLE_AUTO_UPDATE=1
++ * to disable the automatic check (manual check via the Help menu still works).
++ */
++const DSH_GUI_VERSION = "1.0.2";
++const UPDATE_REPO = "xuboboo/dsh-gui";
++const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
++const UPDATE_CHECK_DELAY_MS = 8_000;
++const UPDATE_CHECK_INTERVAL_MS = 6 * 3_600_000;
++/** Names of update assets: the small asar-only package preferred for updates. */
++const UPDATE_ASAR_ASSET_PREFIX = "dsh-gui-v";
++const UPDATE_ASAR_ASSET_SUFFIX = "-win-x64-asar.zip";
++
++/** Strip a leading "v" from a tag for comparison. */
++function versionOf(tag) {
++	return typeof tag === "string" ? tag.replace(/^v/i, "") : "";
++}
++/** Compare dotted numeric versions; returns >0, 0, <0. */
++function compareVersions(a, b) {
++	const pa = String(a).split(".").map((n) => Number.parseInt(n, 10) || 0);
++	const pb = String(b).split(".").map((n) => Number.parseInt(n, 10) || 0);
++	for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
++		const d = (pa[i] ?? 0) - (pb[i] ?? 0);
++		if (d !== 0) return d;
++	}
++	return 0;
++}
++/** Persisted updater state (ignored version, staging records) under userData. */
++function updateStateFile() {
++	return join(app.getPath("userData"), "dsh-gui-update.json");
++}
++function readUpdateState() {
++	try {
++		if (!existsSync(updateStateFile())) return {};
++		return JSON.parse(readFileSync(updateStateFile(), "utf8"));
++	} catch {
++		return {};
++	}
++}
++function writeUpdateState(state) {
++	try {
++		writeFileSync(updateStateFile(), JSON.stringify(state, null, 2), "utf8");
++	} catch (error) {
++		log("updater", `state persist failed: ${String(error)}`);
++	}
++}
++/** Whether an update is currently staged and applied by the helper script. */
++function isUpdateStaged() {
++	return existsSync(join(app.getPath("userData"), "dsh-gui-update", "payload.asar"));
++}
++/** Fetch helper with timeout. */
++async function fetchJson(url, timeoutMs = 15_000) {
++	const controller = new AbortController();
++	const timer = setTimeout(() => controller.abort(), timeoutMs);
++	try {
++		const response = await fetch(url, {
++			signal: controller.signal,
++			headers: { "User-Agent": "dsh-gui-updater", "Accept": "application/vnd.github+json" },
++		});
++		if (!response.ok) throw new Error("HTTP " + response.status);
++		return await response.json();
++	} finally {
++		clearTimeout(timer);
++	}
++}
++/**
++ * The latest non-draft release; resolves undefined on any failure (updates
++ * must never break startup).
++ */
++async function latestRelease() {
++	try {
++		const release = await fetchJson(UPDATE_REPO_API + "/releases/latest", 20_000);
++		if (release === null || typeof release !== "object" || typeof release.tag_name !== "string") {
++			return undefined;
++		}
++		return release;
++	} catch (error) {
++		log("updater", `latest release check failed: ${String(error)}`);
++		return undefined;
++	}
++}
++/** Find the asar-only update asset for a version, or undefined. */
++function asarUpdateAsset(release, version) {
++	const name = UPDATE_ASAR_ASSET_PREFIX + version + UPDATE_ASAR_ASSET_SUFFIX;
++	const assets = Array.isArray(release.assets) ? release.assets : [];
++	return assets.find((asset) => typeof asset.name === "string" && asset.name === name);
++}
++/**
++ * Check for an update and prompt when one is available. Always gives the
++ * user visible feedback: "checking", "up to date", "update found", or
++ * "check failed". Returns true when an update was accepted and started.
++ */
++async function checkForUpdate(force = false) {
++	if (process.env.DSH_GUI_DISABLE_AUTO_UPDATE === "1" && !force) {
++		log("updater", "auto-update disabled by environment");
++		return false;
++	}
++	const release = await latestRelease();
++	if (release === undefined) {
++		// Never leave a manual check unanswered: report the failure.
++		if (force) {
++			await dialog.showMessageBox({
++				type: "warning",
++				title: "检查更新",
++				message: "检查更新失败",
++				detail: "无法连接 GitHub（当前版本 v" + DSH_GUI_VERSION + "）。请检查网络后重试，或前往项目主页手动下载。",
++				buttons: ["知道了"],
++			});
++		}
++		return false;
++	}
++	const remote = versionOf(release.tag_name);
++	if (remote === "") {
++		if (force) {
++			await dialog.showMessageBox({
++				type: "info",
++				title: "检查更新",
++				message: "当前已是最新版本 v" + DSH_GUI_VERSION,
++				buttons: ["知道了"],
++			});
++		}
++		return false;
++	}
++	if (compareVersions(remote, DSH_GUI_VERSION) <= 0) {
++		// Up to date.
++		if (force) {
++			await dialog.showMessageBox({
++				type: "info",
++				title: "检查更新",
++				message: "当前已是最新版本 v" + DSH_GUI_VERSION,
++				buttons: ["知道了"],
++			});
++		}
++		log("updater", "up to date (" + DSH_GUI_VERSION + ")");
++		return false;
++	}
++	const state = readUpdateState();
++	if (!force && state.ignoredVersion === remote) return false;
++	const asset = asarUpdateAsset(release, remote);
++	if (asset === undefined) {
++		const answer = await dialog.showMessageBox({
++			type: "info",
++			title: "发现新版本 " + remote,
++			message: "发现 dsh-gui 新版本 v" + remote + "（当前 v" + DSH_GUI_VERSION + "）",
++			detail: "该版本未提供自动更新包，请前往项目主页手动下载完整安装包。",
++			buttons: ["打开下载页", "忽略此版本", "取消"],
++			defaultId: 0,
++			cancelId: 2,
++		});
++		if (answer.response === 0) openExternal("https://github.com/" + UPDATE_REPO + "/releases");
++		if (answer.response === 1) {
++			state.ignoredVersion = remote;
++			writeUpdateState(state);
++		}
++		return false;
++	}
++	let choice;
++	if (process.env.DSH_GUI_UPDATE_AUTO === "1") {
++		choice = 0;
++	} else {
++		const notes = typeof release.body === "string" && release.body.length > 0
++			? release.body.replace(/[\r\n]{2,}/g, "\n").replace(/[#*\-`>]/g, "").slice(0, 600)
++			: "（该版本未提供更新说明）";
++		const answer = await dialog.showMessageBox({
++			type: "info",
++			title: "发现新版本 " + remote,
++			message: "发现 dsh-gui 新版本 v" + remote + "（当前 v" + DSH_GUI_VERSION + "）",
++			detail: "更新内容：\n" + notes + "\n\n更新包约 " + Math.max(1, Math.round((asset.size ?? 0) / 1024 / 1024)) + " MB。",
++			buttons: ["立即更新", "忽略此版本", "稍后"],
++			defaultId: 0,
++			cancelId: 2,
++		});
++		choice = answer.response;
++	}
++	if (choice === 1) {
++		state.ignoredVersion = remote;
++		writeUpdateState(state);
++		return false;
++	}
++	if (choice !== 0) return false;
++	void downloadAndInstall(remote, asset);
++	return true;
++}
++/**
++ * Direct HTTPS download with manual redirect following (up to 5 hops) and
++ * stream-to-file writing. Uses the Node https stack (direct connection),
++ * which is more reliable for CDN hosts than the Chromium fetch path when a
++ * system proxy is configured but unstable. Returns the final file size.
++ */
++async function downloadHttps(url, destPath, headers = {}, timeoutMs = 20 * 60_000) {
++	const https = await import("node:https");
++	const { createWriteStream } = await import("node:fs");
++	return new Promise((resolve, reject) => {
++		const request = https.get(url, { headers, timeout: 30_000 }, (response) => {
++			const status = response.statusCode ?? 0;
++			if (status >= 300 && status < 400 && response.headers.location !== undefined) {
++				response.resume();
++				void downloadHttps(response.headers.location, destPath, {}, timeoutMs).then(resolve, reject);
++				return;
++			}
++			if (status !== 200) {
++				response.resume();
++				reject(new Error("HTTP " + status));
++				return;
++			}
++			const file = createWriteStream(destPath);
++			response.pipe(file);
++			file.on("finish", () => { file.close(() => resolve(statSync(destPath).size)); });
++			file.on("error", reject);
++		});
++		request.on("timeout", () => { request.destroy(new Error("download timeout")); });
++		request.on("error", reject);
++	});
++}
++/** Read the WinINET system proxy (ProxyServer) via reg query. */
++function systemProxyUrl() {
++	return new Promise((resolve) => {
++		const child = spawn("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", "/v", "ProxyEnable"], { windowsHide: true });
++		let enabled = "";
++		child.stdout.on("data", (d) => { enabled += String(d); });
++		child.on("close", () => {
++			if (!/0x1\b/i.test(enabled)) { resolve(undefined); return; }
++			const child2 = spawn("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", "/v", "ProxyServer"], { windowsHide: true });
++			let server = "";
++			child2.stdout.on("data", (d) => { server += String(d); });
++			child2.on("close", () => {
++				const m = server.match(/ProxyServer\s+REG_SZ\s+(\S+)/i);
++				resolve(m ? m[1] : undefined);
++			});
++		});
++	});
++}
++/** Download with curl.exe (direct or via proxy). Resolves the file size. */
++function downloadViaCurl(url, dest, proxy) {
++	return new Promise((resolve, reject) => {
++		const args = ["-sSL", "--connect-timeout", "20", "--max-time", "600", "-o", dest];
++		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
++		args.push(url);
++		const child = spawn("curl.exe", args, {
++			windowsHide: true,
++			// Proxy env vars would tunnel even localhost downloads; the system
++			// proxy is only used when explicitly requested via --proxy.
++			env: {
++				...process.env,
++				http_proxy: "", https_proxy: "", HTTP_PROXY: "", HTTPS_PROXY: "", ALL_PROXY: "", all_proxy: "",
++				no_proxy: "*", NO_PROXY: "*",
++			},
++		});
++		let stderr = "";
++		child.stderr.on("data", (d) => { stderr += String(d); });
++		child.on("error", reject);
++		child.on("close", (code) => {
++			if (code === 0 && existsSync(dest)) resolve(statSync(dest).size);
++			else reject(new Error("curl exit " + code + " " + stderr.slice(0, 200)));
++		});
++	});
++}
++/** Resolve the CDN download URL for an asset via the API redirect. */
++async function assetDownloadUrl(asset) {
++	try {
++		const controller = new AbortController();
++		const timer = setTimeout(() => controller.abort(), 20_000);
++		try {
++			const response = await fetch(UPDATE_REPO_API + "/releases/assets/" + asset.id, {
++				signal: controller.signal,
++				redirect: "manual",
++				headers: { "Accept": "application/octet-stream", "User-Agent": "dsh-gui-updater" },
++			});
++			const location = response.headers.get("location");
++			if (typeof location === "string" && location.startsWith("http")) return location;
++		} finally {
++			clearTimeout(timer);
++		}
++	} catch (error) {
++		log("updater", `asset URL resolve failed: ${String(error)}`);
++	}
++	return undefined;
++}
++/** Download, verify, and stage the update package; then apply on exit. */
++async function downloadAndInstall(version, asset) {
++	try {
++		log("updater", `downloading ${asset.name} (${asset.size ?? "?"} bytes)`);
++		if (Notification.isSupported()) {
++			new Notification({ title: "dsh-gui 更新", body: "正在下载 " + asset.name + "…" }).show();
++		}
++		// Multi-channel download: curl (direct) → curl (system proxy) → fetch
++		// (Chromium, system proxy). curl gives us connect/proxy/timeout control
++		// that the fetch path lacks on flaky networks.
++		const stageDirFor = join(app.getPath("userData"), "dsh-gui-update");
++		mkdirSync(stageDirFor, { recursive: true });
++		const downloadFile = join(stageDirFor, "download.zip");
++		let downloadedSize = 0;
++		let lastError = null;
++		const cdnUrl = await assetDownloadUrl(asset);
++		if (cdnUrl !== undefined) {
++			// channel 1: curl direct
++			try {
++				downloadedSize = await downloadViaCurl(cdnUrl, downloadFile);
++				log("updater", `curl direct OK (${downloadedSize} bytes)`);
++			} catch (error) {
++				lastError = error;
++				log("updater", `curl direct failed: ${String(error)}`);
++				try { unlinkSync(downloadFile); } catch { }
++			}
++			// channel 2: curl via system proxy
++			if (downloadedSize === 0) {
++				try {
++					const proxy = await systemProxyUrl();
++					if (proxy !== undefined) {
++						downloadedSize = await downloadViaCurl(cdnUrl, downloadFile, proxy);
++						log("updater", `curl proxy OK (${downloadedSize} bytes, proxy ${proxy})`);
++					}
++				} catch (error) {
++					lastError = error;
++					log("updater", `curl proxy failed: ${String(error)}`);
++					try { unlinkSync(downloadFile); } catch { }
++				}
++			}
++		}
++		// channel 3: fetch (Chromium network stack / system proxy)
++		if (downloadedSize === 0) {
++			try {
++				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
++				for (const source of sources) {
++					const controller = new AbortController();
++					const timer = setTimeout(() => controller.abort(), 5 * 60_000);
++					let response;
++					try {
++						response = await fetch(source, { signal: controller.signal });
++					} finally {
++						clearTimeout(timer);
++					}
++					if (response.ok) {
++						const bytes = Buffer.from(await response.arrayBuffer());
++						writeFileSync(downloadFile, bytes);
++						downloadedSize = bytes.length;
++						log("updater", `fetch OK (${downloadedSize} bytes)`);
++						break;
++					}
++				}
++			} catch (error) {
++				lastError = error;
++				log("updater", `fetch channel failed: ${String(error)}`);
++			}
++		}
++		if (downloadedSize === 0) throw new Error("download failed: " + String(lastError ?? "unknown"));
++		const buffer = readFileSync(downloadFile);
++		try { unlinkSync(downloadFile); } catch { }
++
++		// Verify against the GitHub-provided sha256 digest when available.
++		try {
++			const meta = await fetchJson(UPDATE_REPO_API + "/releases/assets/" + asset.id, 20_000);
++			if (typeof meta.digest === "string" && meta.digest.startsWith("sha256:")) {
++				const crypto = await import("node:crypto");
++				const actual = "sha256:" + crypto.createHash("sha256").update(buffer).digest("hex");
++				if (actual !== meta.digest) throw new Error("digest mismatch");
++				log("updater", "sha256 verified");
++			}
++		} catch (error) {
++			log("updater", `digest check skipped: ${String(error)}`);
++		}
++		// Extract resources/app.asar from the update zip (fflate, shipped in node_modules).
++		let unzipSync;
++		try {
++			({ unzipSync } = require("fflate"));
++		} catch {
++			const fflatePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "node_modules", "fflate", "umd", "index.js");
++			({ unzipSync } = require(fflatePath));
++		}
++		const files = unzipSync(new Uint8Array(buffer));
++		let asarBytes = null;
++		for (const [name, data] of Object.entries(files)) {
++			if (name.endsWith("resources/app.asar")) { asarBytes = Buffer.from(data); break; }
++		}
++		if (asarBytes === null || asarBytes.length < 1_000_000) {
++			throw new Error("update package has no valid app.asar");
++		}
++		// Stage the update.
++		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
++		mkdirSync(stageDir, { recursive: true });
++		writeFileSync(join(stageDir, "payload.asar"), asarBytes);
++		writeFileSync(join(stageDir, "manifest.json"), JSON.stringify({
++			version,
++			from: DSH_GUI_VERSION,
++			stagedAt: Date.now(),
++		}, null, 2), "utf8");
++		log("updater", `staged ${version} (${asarBytes.length} bytes)`);
++		// Ask the user whether to restart now; otherwise the update applies on
++		// the next clean exit (see before-quit) and the user launches the app
++		// themselves. The choice always stays with the user.
++		let restart;
++		if (process.env.DSH_GUI_UPDATE_AUTO === "1") {
++			restart = 0;
++		} else {
++			const restartAnswer = await dialog.showMessageBox({
++			type: "info",
++			title: "更新已就绪",
++			message: "dsh-gui " + version + " 已下载完成",
++			detail: "重启应用即可完成安装。您也可以选择稍后重启——更新会在下次退出应用时自动应用。",
++			buttons: ["立即重启", "稍后重启"],
++			defaultId: 1,
++			cancelId: 1,
++		});
++			restart = restartAnswer.response;
++		}
++		if (restart !== 0) {
++			log("updater", "user chose to restart later; update will apply on exit");
++			return;
++		}
++		scheduleApplyOnExit(version, true);
++		app.exit(0);
++	} catch (error) {
++		log("updater", `update failed: ${String(error)}`);
++		await dialog.showMessageBox({
++			type: "error",
++			title: "更新失败",
++			message: "自动更新失败",
++			detail: String(error) + "\n\n可前往项目主页手动下载完整安装包。",
++			buttons: ["知道了"],
++		});
++	}
++}
++/**
++ * Spawn a detached helper script that waits for this process to exit, backs
++ * up the current app.asar, applies the staged one, and relaunches the app.
++ */
++function scheduleApplyOnExit(version, relaunch = false) {
++	try {
++		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
++		const asarTarget = fileURLToPath(new URL("../../resources/app.asar", import.meta.url));
++		const exePath = process.execPath;
++		const scriptPath = join(stageDir, "apply-update.ps1");
++		const script = [
++			"param([switch]$relaunch)",
++			"$ErrorActionPreference = 'Stop'",
++			"$log = '" + join(stageDir, "apply.log") + "'",
++			"function L($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format o) + ' ' + $m) -Encoding utf8 }",
++			"L 'START'",
++			"Start-Sleep -Seconds 3",
++			"$asar = '" + asarTarget + "'",
++			"$stageDir = '" + stageDir + "'",
++			"$stage = '" + join(stageDir, "payload.asar") + "'",
++			"$bak = $asar + '.auto-bak'",
++			"try {",
++			"  Copy-Item -LiteralPath $asar -Destination $bak -Force",
++			"  Copy-Item -LiteralPath $stage -Destination $asar -Force",
++			"  L 'REPLACED'",
++			"  $m = Join-Path $stageDir 'applied.txt'",
++			"  (\'' + version + '\' + \'|\' + (Get-Date -Format o)) | Out-File -LiteralPath $m -Encoding utf8",
++			"} catch {",
++			"  L ('APPLY_ERR: ' + $_.Exception.Message)",
++			"  try { Copy-Item -LiteralPath $bak -Destination $asar -Force -ErrorAction Stop; L 'ROLLED_BACK' } catch { L ('ROLLBACK_ERR: ' + $_.Exception.Message) }",
++			"}",
++			"if ($relaunch) { Start-Process -FilePath '" + exePath + "' -WorkingDirectory '" + dirname(exePath) + "' }",
++			"L 'DONE'",
++		].join("\r\n");
++		writeFileSync(scriptPath, script, "utf8");
++		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
++		if (relaunch) args.push("-relaunch");
++		const child = spawn("powershell", args, {
++			detached: true,
++			stdio: "ignore",
++			windowsHide: true,
++		});
++		child.unref();
++		log("updater", `apply helper spawned for ${version}`);
++	} catch (error) {
++		log("updater", `apply helper spawn failed: ${String(error)}`);
++	}
++}
++/**
++ * Show a one-time notice after an update was applied by the helper script,
++ * then clear the applied marker and stale staging state.
++ */
++function notifyUpdateResult() {
++	try {
++		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
++		const applied = join(stageDir, "applied.txt");
++		if (existsSync(applied)) {
++			const record = readFileSync(applied, "utf8").split("|");
++			const version = record[0];
++			if (typeof version === "string" && version.length > 0) {
++				log("updater", `update applied: ${manifest.version}`);
++				dialog.showMessageBoxSync({
++					type: "info",
++					title: "更新完成",
++					message: "dsh-gui 已更新到 " + manifest.version,
++					detail: "感谢使用自动更新。",
++					buttons: ["知道了"],
++				});
++			}
++			unlinkSync(applied);
++		}
++		// Best-effort cleanup of staging leftovers (backup stays for rollback).
++		for (const name of ["manifest.json", "payload.asar", "apply.log"]) {
++			const p = join(stageDir, name);
++			if (existsSync(p)) { try { unlinkSync(p); } catch { } }
++		}
++	} catch (error) {
++		log("updater", `update result notice failed: ${String(error)}`);
++	}
++}
++/** Install the automatic check schedule (call once from whenReady). */
++function installUpdateSchedule() {
++	setTimeout(() => { void checkForUpdate(false); }, UPDATE_CHECK_DELAY_MS);
++	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
++}
++//#endregion
+ /** Install native edit/view/help menus without exposing privileged renderer IPC. */
+ function installMenu() {
+ 	const template = [
+@@ -412,6 +925,12 @@ function installMenu() {
+ 					}
+ 				},
+ 				{ type: "separator" },
++				{
++					label: "检查更新",
++					click: () => {
++						void checkForUpdate(true);
++					}
++				},
+ 				{
+ 					label: "项目主页",
+ 					click: () => {
+@@ -442,6 +961,20 @@ else {
+ 		if (quitting) return;
+ 		quitting = true;
+ 		event.preventDefault();
++		// Apply a staged update on this clean exit (no relaunch: the user starts
++		// the app themselves next time).
++		try {
++			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
++			if (existsSync(staged) && existsSync(join(app.getPath("userData"), "dsh-gui-update", "app.asar"))) {
++				const manifest = JSON.parse(readFileSync(staged, "utf8"));
++				if (typeof manifest.version === "string" && !existsSync(join(app.getPath("userData"), "dsh-gui-update", "applied.json"))) {
++					log("updater", "applying staged update on exit");
++					scheduleApplyOnExit(manifest.version, false);
++				}
++			}
++		} catch (error) {
++			log("updater", `exit-time apply skipped: ${String(error)}`);
++		}
+ 		stopHarness().finally(() => {
+ 			app.exit(0);
+ 		});
+@@ -456,6 +989,8 @@ else {
+ 		});
+ 		session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === "clipboard-sanitized-write");
+ 		installMenu();
++		installUpdateSchedule();
++		notifyUpdateResult();
+ 		const window = createWindow();
+ 		try {
+ 			await loadWindow(window, await startHarness());

@@ -98,6 +98,7 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 📊 **新增 Token 用量统计设置页**：总览卡片（输入/输出/缓存/会话数/LLM 耗时）、每日用量柱状图（近 7/30 天）、会话用量排行（Top 50）；**清空统计**仅重置统计起点（不删除任何会话记录，localStorage 持久），可随时**恢复完整统计**
 - 实现：浏览器端插件 `client-plugins/ui-settings-token-usage`（聚合 `session.list` 投影列，零日志加载）
 - 🏠 **项目主页**：设置页新增"项目主页"页（GitHub 仓库 + Releases 直达链接）；**帮助菜单 → 项目主页**改为指向本仓库（`patches/0005-menu-project-homepage.patch`）
+- 🔄 **自动更新（v1.0.2）**：帮助菜单 → 检查更新；启动后自动检查（每 6 小时），发现新版本显示更新内容并一键下载安装（`patches/0006-auto-updater.patch`）
 
 ### v1.0.1（2026-08-15）
 
@@ -110,6 +111,18 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 ## 界面预览 / Preview
 
 <!-- 在此放置截图：主界面、启动动画、深色模式 -->
+
+## 发版清单 / Release checklist
+
+> 自动更新依赖以下步骤，**每步都不能漏**，否则客户收不到更新：
+
+1. **改版本号**：`desktop/lib/main.js` 的 `DSH_GUI_VERSION` 常量改为新版本（如 `1.0.3`）
+2. **打整包**：`dsh-gui-vX.Y.Z-win-x64.zip`（解压即用完整包）
+3. **打更新包**：`dsh-gui-vX.Y.Z-win-x64-asar.zip`（仅 `resources/app.asar`，zip 内路径 `resources/app.asar`）——客户端自动更新下载的就是它
+4. **上传两个包**到 GitHub Release（整包 + asar 更新包，tag `vX.Y.Z`）
+5. **验证**：帮助菜单 → 检查更新 应提示新版本；或等启动后 8 秒自动检查
+
+> 说明：自动更新下载 asar 更新包（约 33 MB）并校验 GitHub sha256 后替换 `app.asar`，无需重新下载 280 MB 整包；更新失败会自动回滚并提示手动下载。
 
 ## 面向开发者 / For developers
 
