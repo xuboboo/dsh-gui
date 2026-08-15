@@ -1,5 +1,6 @@
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react';
 import { UsageSection } from "./UsageSection.js";
+import { HomepageSection } from "./HomepageSection.js";
 import { refreshIfLoaded, UsageStatsStore } from "./store.js";
 import { en, zh } from "./locales.js";
 /** Dictionary namespace owned by this plugin. */
@@ -30,6 +31,7 @@ export function apply(ctx) {
         api: connection.api,
         t,
     });
+    const homepageInjected = () => ({ t });
     // Pushed invalidations converge an open page without polling: a connection
     // reset (host restart / reconnect) refetches once the page loaded.
     ctx.effect(() => {
@@ -47,5 +49,12 @@ export function apply(ctx) {
         label: () => t('nav'),
         inject: injected,
     }, UsageSection));
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+        name: 'settings.section',
+        id: 'homepage',
+        order: 90,
+        label: () => t('homepageNav'),
+        inject: homepageInjected,
+    }, HomepageSection));
 }
 //# sourceMappingURL=index.js.map

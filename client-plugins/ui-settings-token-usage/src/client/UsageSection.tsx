@@ -152,11 +152,19 @@ export function UsageSection({ controller, useSnapshot, t }: UsageSectionProps):
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px 12px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 14, opacity: 0.75 }}>{t('intro')}</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: '1 1 auto', fontSize: 14, opacity: 0.75, minWidth: 0 }}>{t('intro')}</div>
+        <div style={{ display: 'flex', flexShrink: 0, gap: 8, alignItems: 'center' }}>
           {snapshot.resetAt !== null && (
-            <span style={{ fontSize: 12, opacity: 0.7 }}>
+            <span style={{
+              fontSize: 12,
+              padding: '3px 8px',
+              borderRadius: 6,
+              opacity: 0.85,
+              background: 'var(--dsw-static-surface-raised, rgba(127,140,175,0.10))',
+              border: '1px solid var(--dsw-static-border-subtle, rgba(127,140,175,0.22))',
+              whiteSpace: 'nowrap',
+            }}>
               {t('statsSince').replace('{date}', dateLabel(snapshot.resetAt))}
             </span>
           )}

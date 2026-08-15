@@ -447,19 +447,20 @@ window.__ModuleLoader__.load({
 						style: {
 							display: "flex",
 							alignItems: "center",
-							justifyContent: "space-between",
-							gap: 12,
-							flexWrap: "wrap"
+							gap: 12
 						},
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							style: {
+								flex: "1 1 auto",
 								fontSize: 14,
-								opacity: .75
+								opacity: .75,
+								minWidth: 0
 							},
 							children: t("intro")
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								display: "flex",
+								flexShrink: 0,
 								gap: 8,
 								alignItems: "center"
 							},
@@ -467,7 +468,12 @@ window.__ModuleLoader__.load({
 								snapshot.resetAt !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: {
 										fontSize: 12,
-										opacity: .7
+										padding: "3px 8px",
+										borderRadius: 6,
+										opacity: .85,
+										background: "var(--dsw-static-surface-raised, rgba(127,140,175,0.10))",
+										border: "1px solid var(--dsw-static-border-subtle, rgba(127,140,175,0.22))",
+										whiteSpace: "nowrap"
 									},
 									children: t("statsSince").replace("{date}", dateLabel(snapshot.resetAt))
 								}),
@@ -722,6 +728,64 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region src/client/HomepageSection.tsx
+		const PROJECT_URL = "https://github.com/xuboboo/dsh-gui";
+		const RELEASES_URL = "https://github.com/xuboboo/dsh-gui/releases";
+		/** The settings section body: project intro + links. */
+		function HomepageSection({ t }) {
+			const linkStyle = {
+				color: "var(--dsw-static-deepseek-500, #4d6bfe)",
+				textDecoration: "none",
+				fontWeight: 600
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					display: "flex",
+					flexDirection: "column",
+					gap: 16,
+					padding: "4px 2px 12px"
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						style: {
+							fontSize: 14,
+							opacity: .75,
+							lineHeight: 1.7
+						},
+						children: t("homepageIntro")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							flexDirection: "column",
+							gap: 10
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("a", {
+							href: PROJECT_URL,
+							target: "_blank",
+							rel: "noopener noreferrer",
+							style: linkStyle,
+							children: [t("homepageLink"), " ↗"]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("a", {
+							href: RELEASES_URL,
+							target: "_blank",
+							rel: "noopener noreferrer",
+							style: linkStyle,
+							children: [t("homepageReleases"), " ↗"]
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						style: {
+							fontSize: 12,
+							opacity: .55,
+							lineHeight: 1.6
+						},
+						children: t("homepageNote")
+					})
+				]
+			});
+		}
+		//#endregion
 		//#region src/client/locales.ts
 		/** Copy dictionaries for the Token usage statistics settings section. */
 		/** English strings (the key-set source of truth for this pair). */
@@ -756,7 +820,12 @@ window.__ModuleLoader__.load({
 			clearConfirmBody: "Only usage after this moment will be counted. No sessions are deleted, and full stats can be restored anytime.",
 			clearConfirm: "Clear",
 			cancel: "Cancel",
-			statsSince: "Counting since {date}"
+			statsSince: "Counting since {date}",
+			homepageNav: "Project",
+			homepageIntro: "dsh-gui is a third-party desktop client for DeepSeek Harness (unofficial): native window, branded theme and splash, startup crash fixes, and extra features such as token usage statistics.",
+			homepageLink: "View project on GitHub",
+			homepageReleases: "Downloads & releases",
+			homepageNote: "Third-party, unofficial — not affiliated with DeepSeek."
 		};
 		/** Simplified Chinese strings, paired with {@link en} key-for-key. */
 		const zh = {
@@ -790,7 +859,12 @@ window.__ModuleLoader__.load({
 			clearConfirmBody: "清空后只统计此刻之后的会话用量，不会删除任何会话记录，可随时恢复完整统计。",
 			clearConfirm: "清空",
 			cancel: "取消",
-			statsSince: "统计自 {date} 起"
+			statsSince: "统计自 {date} 起",
+			homepageNav: "项目主页",
+			homepageIntro: "dsh-gui 是 DeepSeek Harness 的第三方桌面客户端（非官方）：原生窗口、品牌主题与启动动画、启动崩溃修复，以及 Token 用量统计等增强功能。",
+			homepageLink: "在 GitHub 查看项目",
+			homepageReleases: "下载与更新（Releases）",
+			homepageNote: "第三方非官方项目，与 DeepSeek 官方无关。"
 		};
 		//#endregion
 		//#region src/client/index.ts
@@ -828,6 +902,7 @@ window.__ModuleLoader__.load({
 				api: connection.api,
 				t
 			});
+			const homepageInjected = () => ({ t });
 			ctx.effect(() => {
 				const refresh = () => {
 					refreshIfLoaded(controller);
@@ -844,6 +919,13 @@ window.__ModuleLoader__.load({
 				label: () => t("nav"),
 				inject: injected
 			}, UsageSection));
+			ctx.slots.inject("settings.section", () => ctx.slots.register({
+				name: "settings.section",
+				id: "homepage",
+				order: 90,
+				label: () => t("homepageNav"),
+				inject: homepageInjected
+			}, HomepageSection));
 		}
 		//#endregion
 		exports.apply = apply;

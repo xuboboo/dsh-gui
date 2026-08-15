@@ -32,6 +32,11 @@ export const en = {
     clearConfirm: 'Clear',
     cancel: 'Cancel',
     statsSince: 'Counting since {date}',
+    homepageNav: 'Project',
+    homepageIntro: 'dsh-gui is a third-party desktop client for DeepSeek Harness (unofficial): native window, branded theme and splash, startup crash fixes, and extra features such as token usage statistics.',
+    homepageLink: 'View project on GitHub',
+    homepageReleases: 'Downloads & releases',
+    homepageNote: 'Third-party, unofficial — not affiliated with DeepSeek.',
 };
 /** Simplified Chinese strings, paired with {@link en} key-for-key. */
 export const zh = {
@@ -66,5 +71,10 @@ export const zh = {
     clearConfirm: '清空',
     cancel: '取消',
     statsSince: '统计自 {date} 起',
+    homepageNav: '项目主页',
+    homepageIntro: 'dsh-gui 是 DeepSeek Harness 的第三方桌面客户端（非官方）：原生窗口、品牌主题与启动动画、启动崩溃修复，以及 Token 用量统计等增强功能。',
+    homepageLink: '在 GitHub 查看项目',
+    homepageReleases: '下载与更新（Releases）',
+    homepageNote: '第三方非官方项目，与 DeepSeek 官方无关。',
 };
 //# sourceMappingURL=locales.js.map

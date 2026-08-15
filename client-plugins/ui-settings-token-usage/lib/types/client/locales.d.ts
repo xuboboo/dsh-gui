@@ -32,6 +32,11 @@ export declare const en: {
     clearConfirm: string;
     cancel: string;
     statsSince: string;
+    homepageNav: string;
+    homepageIntro: string;
+    homepageLink: string;
+    homepageReleases: string;
+    homepageNote: string;
 };
 /** Simplified Chinese strings, paired with {@link en} key-for-key. */
 export declare const zh: {
@@ -66,6 +71,11 @@ export declare const zh: {
     clearConfirm: string;
     cancel: string;
     statsSince: string;
+    homepageNav: string;
+    homepageIntro: string;
+    homepageLink: string;
+    homepageReleases: string;
+    homepageNote: string;
 };
 /** Key set of the pair; locale binding types dictionary lookups against it. */
 export type UsageKey = keyof typeof en;

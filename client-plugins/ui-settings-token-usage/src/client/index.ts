@@ -14,6 +14,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { UsageSection } from './UsageSection.tsx'
 import type { UsageSectionInjected } from './UsageSection.tsx'
+import { HomepageSection } from './HomepageSection.tsx'
+import type { HomepageSectionInjected } from './HomepageSection.tsx'
 import { refreshIfLoaded, UsageStatsStore } from './store.ts'
 import { en, zh, type UsageKey } from './locales.ts'
 
@@ -58,6 +60,7 @@ export function apply(ctx: ClientContext): void {
     api: connection.api,
     t,
   })
+  const homepageInjected = (): HomepageSectionInjected => ({ t })
 
   // Pushed invalidations converge an open page without polling: a connection
   // reset (host restart / reconnect) refetches once the page loaded.
@@ -76,4 +79,11 @@ export function apply(ctx: ClientContext): void {
     label: () => t('nav'),
     inject: injected,
   }, UsageSection))
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'homepage',
+    order: 90,
+    label: () => t('homepageNav'),
+    inject: homepageInjected,
+  }, HomepageSection))
 }

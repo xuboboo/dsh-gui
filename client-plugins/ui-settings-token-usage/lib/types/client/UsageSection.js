@@ -103,7 +103,15 @@ export function UsageSection({ controller, useSnapshot, t }) {
         }
         return max;
     }, [visibleDays]);
-    return (_jsxs("div", { style: { display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px 12px' }, children: [_jsxs("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }, children: [_jsx("div", { style: { fontSize: 14, opacity: 0.75 }, children: t('intro') }), _jsxs("div", { style: { display: 'flex', gap: 8, alignItems: 'center' }, children: [snapshot.resetAt !== null && (_jsx("span", { style: { fontSize: 12, opacity: 0.7 }, children: t('statsSince').replace('{date}', dateLabel(snapshot.resetAt)) })), snapshot.resetAt !== null
+    return (_jsxs("div", { style: { display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px 12px' }, children: [_jsxs("div", { style: { display: 'flex', alignItems: 'center', gap: 12 }, children: [_jsx("div", { style: { flex: '1 1 auto', fontSize: 14, opacity: 0.75, minWidth: 0 }, children: t('intro') }), _jsxs("div", { style: { display: 'flex', flexShrink: 0, gap: 8, alignItems: 'center' }, children: [snapshot.resetAt !== null && (_jsx("span", { style: {
+                                    fontSize: 12,
+                                    padding: '3px 8px',
+                                    borderRadius: 6,
+                                    opacity: 0.85,
+                                    background: 'var(--dsw-static-surface-raised, rgba(127,140,175,0.10))',
+                                    border: '1px solid var(--dsw-static-border-subtle, rgba(127,140,175,0.22))',
+                                    whiteSpace: 'nowrap',
+                                }, children: t('statsSince').replace('{date}', dateLabel(snapshot.resetAt)) })), snapshot.resetAt !== null
                                 ? (_jsx(Button, { onClick: () => { restoreStats(controller); }, disabled: snapshot.status === 'loading', children: t('restoreStats') }))
                                 : (_jsx(Button, { variant: "outline", onClick: () => { setConfirmOpen(true); }, disabled: snapshot.status === 'loading', children: t('clearStats') })), _jsx(Button, { onClick: () => { void controller.load(); }, disabled: snapshot.status === 'loading', children: t('refresh') })] })] }), _jsx(Modal, { open: confirmOpen, onClose: () => { setConfirmOpen(false); }, title: t('clearConfirmTitle'), closeLabel: t('cancel'), description: t('clearConfirmBody'), footer: (_jsxs("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 }, children: [_jsx(Button, { onClick: () => { setConfirmOpen(false); }, children: t('cancel') }), _jsx(Button, { variant: "primary", onClick: () => {
                                 setConfirmOpen(false);
