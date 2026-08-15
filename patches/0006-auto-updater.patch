@@ -13,7 +13,7 @@
  //#region src/runtime.ts
  /** Readiness line prefix printed by the Web profile after its Loader settles. */
  const READY_PREFIX = "dsh web: ";
-@@ -359,6 +359,519 @@ async function restartHarness() {
+@@ -359,6 +359,623 @@ async function restartHarness() {
  		await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail));
  	}
  }
@@ -26,7 +26,7 @@
 + * All user interaction is native dialogs; set DSH_GUI_DISABLE_AUTO_UPDATE=1
 + * to disable the automatic check (manual check via the Help menu still works).
 + */
-+const DSH_GUI_VERSION = "1.0.3";
++const DSH_GUI_VERSION = "1.0.4";
 +const UPDATE_REPO = "xuboboo/dsh-gui";
 +const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
 +const UPDATE_CHECK_DELAY_MS = 8_000;
@@ -205,6 +205,35 @@
 +	void downloadAndInstall(remote, asset);
 +	return true;
 +}
++/** Small frameless always-on-top progress window for downloads. */
++let progressWindow = null;
++function ensureProgressWindow() {
++	if (progressWindow !== null && !progressWindow.isDestroyed()) return progressWindow;
++	progressWindow = new BrowserWindow({
++		width: 340,
++		height: 96,
++		frame: false,
++		resizable: false,
++		alwaysOnTop: true,
++		skipTaskbar: true,
++		backgroundColor: "#0b1020",
++		webPreferences: { sandbox: true, contextIsolation: true },
++	});
++	progressWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent("<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{height:100%;margin:0;background:#0b1020;color:#e9edff;font:13px/1.5 system-ui,\"Segoe UI\",\"Microsoft YaHei\",sans-serif}.wrap{height:100%;display:flex;flex-direction:column;justify-content:center;padding:0 18px;box-sizing:border-box}#txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}.bar{height:6px;margin-top:10px;border-radius:3px;background:rgba(127,140,175,.25);overflow:hidden;position:relative}#fill{height:100%;width:0%;border-radius:3px;background:#4d6bfe;transition:width .2s}#fill.ind{animation:slide 1.1s linear infinite;background:linear-gradient(90deg,#4d6bfe 0%,#8b9bff 50%,#4d6bfe 100%);background-size:200% 100%}@keyframes slide{0%{background-position:0% 0}100%{background-position:200% 0}}</style></head><body><div class=\"wrap\"><div id=\"txt\">准备中…</div><div class=\"bar\"><div id=\"fill\"></div></div></div><script>window.__update = function(text, pct) {  document.getElementById(\"txt\").textContent = text;  const fill = document.getElementById(\"fill\");  if (pct < 0) { fill.classList.add(\"ind\"); fill.style.width = \"100%\"; }  else { fill.classList.remove(\"ind\"); fill.style.width = Math.max(0, Math.min(100, pct)) + \"%\"; }};</script></body></html>"));
++	progressWindow.on("closed", () => { progressWindow = null; });
++	return progressWindow;
++}
++/** Update the progress window; pct < 0 shows an indeterminate animation. */
++function updateProgress(text, pct) {
++	try {
++		const win = ensureProgressWindow();
++		void win.webContents.executeJavaScript("window.__update(" + JSON.stringify(text) + ", " + pct + ")").catch(() => { });
++	} catch { }
++}
++function closeProgressWindow() {
++	try { if (progressWindow !== null && !progressWindow.isDestroyed()) progressWindow.close(); } catch { }
++	progressWindow = null;
++}
 +/**
 + * Direct HTTPS download with manual redirect following (up to 5 hops) and
 + * stream-to-file writing. Uses the Node https stack (direct connection),
@@ -233,6 +262,41 @@
 +			file.on("error", reject);
 +		});
 +		request.on("timeout", () => { request.destroy(new Error("download timeout")); });
++		request.on("error", reject);
++	});
++}
++/**
++ * Streaming HTTPS download with progress callbacks and manual redirect
++ * following. Direct connection (no system proxy).
++ */
++async function downloadStream(url, destPath, onProgress) {
++	const https = await import("node:https");
++	const { createWriteStream } = await import("node:fs");
++	return new Promise((resolve, reject) => {
++		const request = https.get(url, { headers: { "User-Agent": "dsh-gui-updater" }, timeout: 20_000 }, (response) => {
++			const status = response.statusCode ?? 0;
++			if (status >= 300 && status < 400 && response.headers.location !== undefined) {
++				response.resume();
++				void downloadStream(response.headers.location, destPath, onProgress).then(resolve, reject);
++				return;
++			}
++			if (status !== 200) {
++				response.resume();
++				reject(new Error("HTTP " + status));
++				return;
++			}
++			const total = Number.parseInt(response.headers["content-length"] ?? "0", 10) || 0;
++			const file = createWriteStream(destPath);
++			let received = 0;
++			response.on("data", (chunk) => {
++				received += chunk.length;
++				if (total > 0) onProgress(received, total);
++			});
++			response.pipe(file);
++			file.on("finish", () => { file.close(() => resolve(received)); });
++			file.on("error", reject);
++		});
++		request.on("timeout", () => { request.destroy(new Error("连接超时")); });
 +		request.on("error", reject);
 +	});
 +}
@@ -307,9 +371,10 @@
 +		if (Notification.isSupported()) {
 +			new Notification({ title: "dsh-gui 更新", body: "正在下载 " + asset.name + "…" }).show();
 +		}
-+		// Multi-channel download: curl (direct) → curl (system proxy) → fetch
-+		// (Chromium, system proxy). curl gives us connect/proxy/timeout control
-+		// that the fetch path lacks on flaky networks.
++		// Multi-channel download with live progress: https stream (direct) →
++		// curl direct → curl via system proxy → fetch (system proxy). Every
++		// channel fails fast (20s connect timeout) so the user always gets
++		// timely feedback instead of a silent hang.
 +		const stageDirFor = join(app.getPath("userData"), "dsh-gui-update");
 +		mkdirSync(stageDirFor, { recursive: true });
 +		const downloadFile = join(stageDirFor, "download.zip");
@@ -317,18 +382,36 @@
 +		let lastError = null;
 +		const cdnUrl = await assetDownloadUrl(asset);
 +		if (cdnUrl !== undefined) {
-+			// channel 1: curl direct
-+			try {
-+				downloadedSize = await downloadViaCurl(cdnUrl, downloadFile);
-+				log("updater", `curl direct OK (${downloadedSize} bytes)`);
-+			} catch (error) {
-+				lastError = error;
-+				log("updater", `curl direct failed: ${String(error)}`);
-+				try { unlinkSync(downloadFile); } catch { }
-+			}
-+			// channel 2: curl via system proxy
++			// channel 1: https stream (direct), with progress
 +			if (downloadedSize === 0) {
 +				try {
++					updateProgress("正在连接下载服务器…", -1);
++					downloadedSize = await downloadStream(cdnUrl, downloadFile, (received, total) => {
++						updateProgress("正在下载更新包 " + Math.round(received / 1024 / 1024) + " / " + Math.round(total / 1024 / 1024) + " MB", Math.round((received / total) * 100));
++					});
++					log("updater", `stream direct OK (${downloadedSize} bytes)`);
++				} catch (error) {
++					lastError = error;
++					log("updater", `stream direct failed: ${String(error)}`);
++					try { unlinkSync(downloadFile); } catch { }
++				}
++			}
++			// channel 2: curl direct
++			if (downloadedSize === 0) {
++				try {
++					updateProgress("直连失败，正在重试…", -1);
++					downloadedSize = await downloadViaCurl(cdnUrl, downloadFile);
++					log("updater", `curl direct OK (${downloadedSize} bytes)`);
++				} catch (error) {
++					lastError = error;
++					log("updater", `curl direct failed: ${String(error)}`);
++					try { unlinkSync(downloadFile); } catch { }
++				}
++			}
++			// channel 3: curl via system proxy
++			if (downloadedSize === 0) {
++				try {
++					updateProgress("正在通过系统代理下载…", -1);
 +					const proxy = await systemProxyUrl();
 +					if (proxy !== undefined) {
 +						downloadedSize = await downloadViaCurl(cdnUrl, downloadFile, proxy);
@@ -341,13 +424,14 @@
 +				}
 +			}
 +		}
-+		// channel 3: fetch (Chromium network stack / system proxy)
++		// channel 4: fetch (Chromium / system proxy), streaming progress
 +		if (downloadedSize === 0) {
 +			try {
 +				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
 +				for (const source of sources) {
++					updateProgress("正在通过浏览器通道下载…", -1);
 +					const controller = new AbortController();
-+					const timer = setTimeout(() => controller.abort(), 5 * 60_000);
++					const timer = setTimeout(() => controller.abort(), 3 * 60_000);
 +					let response;
 +					try {
 +						response = await fetch(source, { signal: controller.signal });
@@ -355,7 +439,22 @@
 +						clearTimeout(timer);
 +					}
 +					if (response.ok) {
-+						const bytes = Buffer.from(await response.arrayBuffer());
++						const total = Number.parseInt(response.headers.get("content-length") ?? "0", 10) || 0;
++						const reader = response.body?.getReader();
++						const chunks = [];
++						let received = 0;
++						if (reader !== undefined) {
++							while (true) {
++								const { done, value } = await reader.read();
++								if (done) break;
++								chunks.push(Buffer.from(value));
++								received += value.length;
++								if (total > 0) updateProgress("正在下载更新包 " + Math.round(received / 1024 / 1024) + " / " + Math.round(total / 1024 / 1024) + " MB", Math.round((received / total) * 100));
++							}
++						} else {
++							chunks.push(Buffer.from(await response.arrayBuffer()));
++						}
++						const bytes = Buffer.concat(chunks);
 +						writeFileSync(downloadFile, bytes);
 +						downloadedSize = bytes.length;
 +						log("updater", `fetch OK (${downloadedSize} bytes)`);
@@ -367,9 +466,11 @@
 +				log("updater", `fetch channel failed: ${String(error)}`);
 +			}
 +		}
-+		if (downloadedSize === 0) throw new Error("download failed: " + String(lastError ?? "unknown"));
++		if (downloadedSize === 0) throw new Error("下载失败：" + String(lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误")));
++		updateProgress("下载完成，正在校验…", 100);
 +		const buffer = readFileSync(downloadFile);
 +		try { unlinkSync(downloadFile); } catch { }
++
 +
 +		// Verify against the GitHub-provided sha256 digest when available.
 +		try {
@@ -409,6 +510,7 @@
 +			stagedAt: Date.now(),
 +		}, null, 2), "utf8");
 +		log("updater", `staged ${version} (${asarBytes.length} bytes)`);
++		closeProgressWindow();
 +		// Ask the user whether to restart now; otherwise the update applies on
 +		// the next clean exit (see before-quit) and the user launches the app
 +		// themselves. The choice always stays with the user.
@@ -429,12 +531,14 @@
 +		}
 +		if (restart !== 0) {
 +			log("updater", "user chose to restart later; update will apply on exit");
++			closeProgressWindow();
 +			return;
 +		}
 +		scheduleApplyOnExit(version, true);
 +		app.exit(0);
 +	} catch (error) {
 +		log("updater", `update failed: ${String(error)}`);
++		closeProgressWindow();
 +		await dialog.showMessageBox({
 +			type: "error",
 +			title: "更新失败",
@@ -533,10 +637,26 @@
  /** Install native edit/view/help menus without exposing privileged renderer IPC. */
  function installMenu() {
  	const template = [
-@@ -412,6 +925,12 @@ function installMenu() {
+@@ -412,6 +1029,28 @@ function installMenu() {
  					}
  				},
  				{ type: "separator" },
++				{ type: "separator" },
++				{
++					label: "关于 dsh-gui",
++					click: async () => {
++						const answer = await dialog.showMessageBox({
++							type: "info",
++							title: "关于 dsh-gui",
++							message: "dsh-gui v" + DSH_GUI_VERSION,
++							detail: "DeepSeek Harness 第三方桌面客户端（非官方）\n\n功能：品牌主题与启动动画、启动崩溃修复、Token 用量统计、自动更新\n\n项目主页：https://github.com/xuboboo/dsh-gui",
++							buttons: ["打开项目主页", "知道了"],
++							defaultId: 1,
++							cancelId: 1,
++						});
++						if (answer.response === 0) openExternal("https://github.com/xuboboo/dsh-gui");
++					}
++				},
 +				{
 +					label: "检查更新",
 +					click: () => {
@@ -546,7 +666,7 @@
  				{
  					label: "项目主页",
  					click: () => {
-@@ -442,6 +961,20 @@ else {
+@@ -442,6 +1081,20 @@ else {
  		if (quitting) return;
  		quitting = true;
  		event.preventDefault();
@@ -567,7 +687,7 @@
  		stopHarness().finally(() => {
  			app.exit(0);
  		});
-@@ -456,6 +989,8 @@ else {
+@@ -456,6 +1109,8 @@ else {
  		});
  		session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === "clipboard-sanitized-write");
  		installMenu();
