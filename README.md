@@ -125,7 +125,10 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 
 ## 界面预览 / Preview
 
-<!-- 在此放置截图：主界面、启动动画、深色模式 -->
+| 主界面 | 设置 | Token 用量统计 | 项目主页 |
+| --- | --- | --- | --- |
+| ![主界面](docs/screenshots/01-main.png) | ![设置](docs/screenshots/02-settings.png) | ![Token 用量统计](docs/screenshots/03-usage-stats.png) | ![项目主页](docs/screenshots/04-project-home.png) |
+
 
 ## 发版清单 / Release checklist
 
