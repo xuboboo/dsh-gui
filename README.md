@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.1-win-x64.zip`**（Windows 64 位，约 280 MB）— v1.0.1 修复复制按钮无反应（剪贴板权限）
+- **`dsh-gui-v1.0.2-win-x64.zip`**（Windows 64 位，约 280 MB）— v1.0.2 新增 Token 用量统计（含清空/恢复）；v1.0.1 修复复制按钮无反应
 
 ### 安装步骤
 
@@ -76,6 +76,7 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🎨 **DeepSeek 设计语言界面** — token 级主题覆盖：品牌蓝主按钮、浅蓝消息气泡、蓝调选中/悬停态、细圆角滚动条、品牌色选区与焦点环、柔和过渡与按压反馈
 - 🔧 **rc.5 启动崩溃修复** — launcher 补传 --expose-internals、profile 依赖落盘、ensureSymlink 兼容真实目录
 - 📋 **复制按钮修复（v1.0.1）** — 放行 `clipboard-sanitized-write` 权限，对话/代码块复制按钮恢复可用
+- 📊 **Token 用量统计（v1.0.2）** — 设置页新增用量统计：总览卡片、每日柱状图（7/30 天）、会话排行；支持**清空统计**（非破坏性，不删会话）与一键**恢复完整统计**
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
@@ -83,6 +84,21 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 ### v1.0.1（2026-08-15）
 
 - 🐛 **修复复制按钮无反应**：官方 launcher 默认拒绝一切权限请求（`setPermissionRequestHandler` 一律 `callback(false)`），导致 `navigator.clipboard.writeText` 被拒、复制按钮静默失效。v1.0.1 放行 `clipboard-sanitized-write` 权限（见 `patches/0003-launcher-clipboard-permission.patch`）。
+
+### v1.0.0（2026-08-14）
+
+- 首个发行版：品牌启动动画、DeepSeek 设计语言主题、rc.5 启动崩溃修复
+
+## 更新日志 / Changelog
+
+### v1.0.2（2026-08-15）
+
+- 📊 **新增 Token 用量统计设置页**：总览卡片（输入/输出/缓存/会话数/LLM 耗时）、每日用量柱状图（近 7/30 天）、会话用量排行（Top 50）；**清空统计**仅重置统计起点（不删除任何会话记录，localStorage 持久），可随时**恢复完整统计**
+- 实现：浏览器端插件 `client-plugins/ui-settings-token-usage`（聚合 `session.list` 投影列，零日志加载）
+
+### v1.0.1（2026-08-15）
+
+- 🐛 **修复复制按钮无反应**：官方 launcher 拒绝一切权限请求（`setPermissionRequestHandler` 一律 `callback(false)`），导致 `navigator.clipboard.writeText` 被拒、复制按钮静默失效。v1.0.1 放行 `clipboard-sanitized-write` 权限（见 `patches/0003-launcher-clipboard-permission.patch`）。
 
 ### v1.0.0（2026-08-14）
 

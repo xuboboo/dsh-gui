@@ -1,0 +1,1 @@
+{"version":3,"file":"invariant.js","sourceRoot":"","sources":["../../src/invariant.ts"],"names":[],"mappings":"AAAA,+FAA+F;AAE/F,MAAM,CAAC,MAAM,IAAI,GAAG,0CAA0C,CAAA;AAE9D;;;GAGG;AACH,MAAM,UAAU,SAAS,CAAC,QAAgB;IACxC,IAAI,QAAQ,KAAK,iDAAiD,EAAE,CAAC;QACnE,MAAM,IAAI,KAAK,CAAC,4CAA4C,GAAG,QAAQ,CAAC,CAAA;IAC1E,CAAC;AACH,CAAC"}

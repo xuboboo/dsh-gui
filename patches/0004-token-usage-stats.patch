@@ -1,0 +1,19 @@
+--- a/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml
++++ b/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml
+@@ -193,6 +193,9 @@
+     - id: ui-settings-models
+       name: '@deepseek-ai/dsh-client-ui-settings-models'
+ 
++    - id: ui-settings-token-usage
++      name: '@deepseek-ai/dsh-client-ui-settings-token-usage'
++
+     - id: ui-settings-plugin-inventory
+       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
+ 
+--- a/node_modules/@deepseek-ai/dsh-web-app/package.json
++++ b/node_modules/@deepseek-ai/dsh-web-app/package.json
+@@ -60,6 +60,7 @@
+     "@deepseek-ai/dsh-client-ui-settings-models": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-settings-token-usage": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-settings-plugin-inventory": "workspace:^",
+ 

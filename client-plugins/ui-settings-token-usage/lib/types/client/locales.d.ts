@@ -1,0 +1,72 @@
+/** Copy dictionaries for the Token usage statistics settings section. */
+/** English strings (the key-set source of truth for this pair). */
+export declare const en: {
+    nav: string;
+    title: string;
+    intro: string;
+    refresh: string;
+    totalTokens: string;
+    inputTokens: string;
+    outputTokens: string;
+    cacheTokens: string;
+    cacheRead: string;
+    cacheWrite: string;
+    sessions: string;
+    llmTime: string;
+    decodeTokens: string;
+    daily: string;
+    range7: string;
+    range30: string;
+    topSessions: string;
+    session: string;
+    updated: string;
+    total: string;
+    turns: string;
+    noData: string;
+    loadFailed: string;
+    retry: string;
+    clearStats: string;
+    restoreStats: string;
+    clearConfirmTitle: string;
+    clearConfirmBody: string;
+    clearConfirm: string;
+    cancel: string;
+    statsSince: string;
+};
+/** Simplified Chinese strings, paired with {@link en} key-for-key. */
+export declare const zh: {
+    nav: string;
+    title: string;
+    intro: string;
+    refresh: string;
+    totalTokens: string;
+    inputTokens: string;
+    outputTokens: string;
+    cacheTokens: string;
+    cacheRead: string;
+    cacheWrite: string;
+    sessions: string;
+    llmTime: string;
+    decodeTokens: string;
+    daily: string;
+    range7: string;
+    range30: string;
+    topSessions: string;
+    session: string;
+    updated: string;
+    total: string;
+    turns: string;
+    noData: string;
+    loadFailed: string;
+    retry: string;
+    clearStats: string;
+    restoreStats: string;
+    clearConfirmTitle: string;
+    clearConfirmBody: string;
+    clearConfirm: string;
+    cancel: string;
+    statsSince: string;
+};
+/** Key set of the pair; locale binding types dictionary lookups against it. */
+export type UsageKey = keyof typeof en;
+//# sourceMappingURL=locales.d.ts.map

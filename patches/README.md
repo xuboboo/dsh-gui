@@ -34,3 +34,9 @@ Error: failed to apply loader entry <id> (@deepseek-ai/cordis-plugin-hmr): --exp
 
 > 提示：本修复针对 rc.5；建议同时关注官方新版是否已修复 launcher。
 
+
+---
+
+## v1.0.2 附加说明
+
+- 新增浏览器端插件 **Token 用量统计设置页**（`client-plugins/ui-settings-token-usage`）：总览卡片、每日柱状图、会话排行，含**清空统计 / 恢复完整统计**（非破坏性，localStorage 持久）。安装方式见插件目录 README。
