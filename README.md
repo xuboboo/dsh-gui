@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.6-win-x64.zip`**（Windows 64 位，约 280 MB）— 最新版（自动更新 + 进度 + 关于，原生提示框）
+- **`dsh-gui-v1.0.7-win-x64.zip`**（Windows 64 位，约 280 MB）— 最新版（自动更新 + 进度 + 关于，原生提示框，重启服务不再误报）
 
 ### 安装步骤
 
@@ -90,6 +90,10 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 首个发行版：品牌启动动画、DeepSeek 设计语言主题、rc.5 启动崩溃修复
 
 ## 更新日志 / Changelog
+
+### v1.0.7（2026-08-15）
+
+- 🐛 **修复"重新启动本地服务"误报错误页**：帮助菜单 → 重新启动本地服务 不再闪现"运行时已停止 / runtime exited with code 1"错误页；旧进程会等其完全退出后再启动新服务，连点也不会反复杀掉刚起来的服务（`patches/0007-restart-no-error-flash.patch`）
 
 ### v1.0.6（2026-08-15）
 
