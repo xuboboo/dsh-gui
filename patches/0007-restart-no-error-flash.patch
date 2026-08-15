@@ -1,0 +1,101 @@
+diff --git a/desktop/lib/main.js b/desktop/lib/main.js
+--- a/desktop/lib/main.js
++++ b/desktop/lib/main.js
+@@ -113,8 +113,11 @@ const require = createRequire(import.meta.url);
+ let mainWindow;
+ let harnessProcess;
+ let applicationUrl;
++let applicationUrlOwner;
+ let startupPromise;
+ let quitting = false;
++let restarting = false;
++let expectedStop = false;
+ let logPath = "";
+ const navigation = new LatestNavigation();
+ /** Append one timestamped launcher or child-process record to the user log. */
+@@ -244,12 +247,18 @@ async function stopHarness() {
+ 			"/f"
+ 		], { windowsHide: true });
+ 		await new Promise((resolve) => {
+-			taskkill.once("exit", () => {
+-				resolve();
+-			});
+-			taskkill.once("error", () => {
++			const finish = () => {
++				clearTimeout(grace);
+ 				resolve();
++			};
++			const grace = setTimeout(finish, STOP_TIMEOUT_MS);
++			child.once("exit", finish);
++			taskkill.once("exit", () => {
++				// taskkill has issued the kill; give the child a short grace
++				// period to fully exit and release the loopback port.
++				setTimeout(finish, 1e3);
+ 			});
++			taskkill.once("error", finish);
+ 		});
+ 		return;
+ 	}
+@@ -319,6 +328,7 @@ function startHarness() {
+ 			settled = true;
+ 			clearTimeout(timeout);
+ 			applicationUrl = ready;
++			applicationUrlOwner = child;
+ 			resolve(ready);
+ 		});
+ 		child.stderr.on("data", (chunk) => {
+@@ -333,13 +343,19 @@ function startHarness() {
+ 			stdout.close();
+ 			if (harnessProcess === child) harnessProcess = void 0;
+ 			const reason = `runtime exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${String(code)}`}`;
+-			log("desktop", reason);
++			log("desktop", expectedStop ? `${reason} (expected stop)` : reason);
+ 			if (!settled) {
+ 				finish(new Error(formatRuntimeExit(reason, stderrTail)));
+ 				return;
+ 			}
+-			applicationUrl = void 0;
+-			if (!quitting && mainWindow !== void 0 && !mainWindow.isDestroyed()) loadWindow(mainWindow, statusPage("DeepSeek Harness 运行时已停止", `请查看下方错误或完整日志：${logPath}`, formatRuntimeExit(reason, stderrTail))).catch((error) => {
++			if (applicationUrlOwner === child) {
++				applicationUrlOwner = void 0;
++				applicationUrl = void 0;
++			}
++			// A launcher-initiated stop (restart/quit) is expected: keep the
++			// splash instead of flashing the "stopped" page over the service
++			// that is being replaced.
++			if (!quitting && !expectedStop && mainWindow !== void 0 && !mainWindow.isDestroyed()) loadWindow(mainWindow, statusPage("DeepSeek Harness 运行时已停止", `请查看下方错误或完整日志：${logPath}`, formatRuntimeExit(reason, stderrTail))).catch((error) => {
+ 				log("desktop", `runtime-exit page failed: ${error instanceof Error ? error.message : String(error)}`);
+ 			});
+ 		});
+@@ -348,15 +364,23 @@ function startHarness() {
+ }
+ /** Restart the child runtime and replace the current status page on readiness. */
+ async function restartHarness() {
+-	const window = createWindow();
+-	await loadWindow(window, splashPage("正在重新创建本地运行时", "服务重启中，请稍候"));
+-	await stopHarness();
++	if (restarting) return;
++	restarting = true;
++	expectedStop = true;
+ 	try {
+-		await loadWindow(window, await startHarness());
+-	} catch (error) {
+-		const detail = error instanceof Error ? error.message : String(error);
+-		log("desktop", `restart failed: ${detail}`);
+-		await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail));
++		const window = createWindow();
++		await loadWindow(window, splashPage("正在重新创建本地运行时", "服务重启中，请稍候"));
++		await stopHarness();
++		try {
++			await loadWindow(window, await startHarness());
++		} catch (error) {
++			const detail = error instanceof Error ? error.message : String(error);
++			log("desktop", `restart failed: ${detail}`);
++			await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail));
++		}
++	} finally {
++		restarting = false;
++		expectedStop = false;
+ 	}
+ }
+ //#region src/updater.ts

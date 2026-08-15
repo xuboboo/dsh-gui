@@ -40,3 +40,15 @@ Error: failed to apply loader entry <id> (@deepseek-ai/cordis-plugin-hmr): --exp
 ## v1.0.2 附加说明
 
 - 新增浏览器端插件 **Token 用量统计设置页**（`client-plugins/ui-settings-token-usage`）：总览卡片、每日柱状图、会话排行，含**清空统计 / 恢复完整统计**（非破坏性，localStorage 持久）。安装方式见插件目录 README。
+
+---
+
+## v1.0.7 附加说明（重启服务误报修复）
+
+- 新增补丁 **0007**（`desktop/lib/main.js`）：修复"帮助 → 重新启动本地服务"后闪现"运行时已停止 / runtime exited with code 1"错误页的问题。
+- 根因：重启时旧运行时被 taskkill 后，其 exit 事件晚于新进程 spawn 到达，launcher 误以为运行时意外退出，在启动画面上覆盖了错误状态页。
+- 修复：
+  1. 重启流程设置 `expectedStop` 标记，被预期停止的进程不再弹错误页（日志标注 `(expected stop)`）；
+  2. 就绪 URL 按进程归属跟踪（`applicationUrlOwner`），旧进程退出不再清掉新进程的就绪状态；
+  3. Windows 下 `stopHarness` 真正等待子进程 exit 事件（带 5s 上限）后再启动新进程，消除端口释放竞态；
+  4. 重启增加重入保护，连点"重新启动本地服务"不会反复杀掉刚起来的服务。
