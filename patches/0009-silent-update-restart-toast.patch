@@ -476,7 +476,18 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	}
  }
  /**
-@@ -992,7 +1101,7 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -980,7 +1089,9 @@ async function downloadAndInstall(version, asset) {
+ function scheduleApplyOnExit(version, relaunch = false) {
+ 	try {
+ 		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
+-		const asarTarget = fileURLToPath(new URL("../../resources/app.asar", import.meta.url));
++		// From inside the asar (desktop/lib/main.js), the real app.asar sits
++		// three levels up: desktop/lib -> desktop -> asar root -> resources/.
++		const asarTarget = fileURLToPath(new URL("../../../app.asar", import.meta.url));
+ 		const exePath = process.execPath;
+ 		const scriptPath = join(stageDir, "apply-update.ps1");
+ 		const script = [
+@@ -992,14 +1103,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"Start-Sleep -Seconds 3",
  			"$asar = '" + asarTarget + "'",
  			"$stageDir = '" + stageDir + "'",
@@ -485,7 +496,15 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			"$bak = $asar + '.auto-bak'",
  			"try {",
  			"  Copy-Item -LiteralPath $asar -Destination $bak -Force",
-@@ -1007,7 +1116,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
+ 			"  Copy-Item -LiteralPath $stage -Destination $asar -Force",
+ 			"  L 'REPLACED'",
+ 			"  $m = Join-Path $stageDir 'applied.txt'",
+-			"  (\'' + version + '\' + \'|\' + (Get-Date -Format o)) | Out-File -LiteralPath $m -Encoding utf8",
++			"  ('" + version + "' + '|' + (Get-Date -Format o)) | Out-File -LiteralPath $m -Encoding utf8",
+ 			"} catch {",
+ 			"  L ('APPLY_ERR: ' + $_.Exception.Message)",
+ 			"  try { Copy-Item -LiteralPath $bak -Destination $asar -Force -ErrorAction Stop; L 'ROLLED_BACK' } catch { L ('ROLLBACK_ERR: ' + $_.Exception.Message) }",
+@@ -1007,7 +1118,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"if ($relaunch) { Start-Process -FilePath '" + exePath + "' -WorkingDirectory '" + dirname(exePath) + "' }",
  			"L 'DONE'",
  		].join("\r\n");
@@ -497,7 +516,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
  		if (relaunch) args.push("-relaunch");
  		const child = spawn("powershell", args, {
-@@ -1046,7 +1158,7 @@ function notifyUpdateResult() {
+@@ -1046,7 +1160,7 @@ function notifyUpdateResult() {
  			unlinkSync(applied);
  		}
  		// Best-effort cleanup of staging leftovers (backup stays for rollback).
@@ -506,7 +525,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			const p = join(stageDir, name);
  			if (existsSync(p)) { try { unlinkSync(p); } catch { } }
  		}
-@@ -1168,7 +1280,7 @@ else {
+@@ -1168,7 +1282,7 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
