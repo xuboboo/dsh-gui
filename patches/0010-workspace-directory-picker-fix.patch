@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..6f1cc42
+index 0000000..f89330c
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,89 @@
 +/**
 + * Directory-picker worker (CJS).
 + *
@@ -58,6 +58,13 @@ index 0000000..6f1cc42
 +  windowsHide: true,
 +  stdio: ['ignore', 'pipe', 'pipe'],
 +})
++// A dialog that appears without keyboard focus turns Alt+F4 into the
++// desktop's shutdown menu — force-activate the dialog a moment after it
++// appears so close shortcuts land on the dialog itself.
++setTimeout(() => {
++  const act = spawn('powershell.exe', ['-NoProfile', '-Command', "$wshell = New-Object -ComObject WScript.Shell; $wshell.AppActivate('Select Workspace Directory')"], { windowsHide: true, stdio: 'ignore' })
++  act.unref()
++}, 300)
 +child.on('close', () => { try { require('node:fs').unlinkSync(vbsPath) } catch { } })
 +
 +let stdout = ''
