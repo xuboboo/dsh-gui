@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..f89330c
+index 0000000..6801938
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,93 @@
 +/**
 + * Directory-picker worker (CJS).
 + *
@@ -34,7 +34,7 @@ index 0000000..f89330c
 +// nothing when cancelled. BOM-less ASCII only (no non-ASCII literals).
 +const VBS_SCRIPT = [
 +  'Set objShell = CreateObject("Shell.Application")',
-+  'Set objFolder = objShell.BrowseForFolder(0, "Select Workspace Directory", &H41)',
++  'Set objFolder = objShell.BrowseForFolder(0, "请选择工作区目录", &H41)',
 +  'If Not objFolder Is Nothing Then',
 +  '  Dim p: p = objFolder.Self.Path',
 +  '  Dim i',
@@ -53,7 +53,7 @@ index 0000000..f89330c
 +send({ kind: 'showing', threadId: 0 })
 +
 +const vbsPath = require('node:path').join(require('node:os').tmpdir(), 'dsh-picker-' + process.pid + '.vbs')
-+require('node:fs').writeFileSync(vbsPath, VBS_SCRIPT, 'utf8')
++require('node:fs').writeFileSync(vbsPath, '\ufeff' + VBS_SCRIPT, 'utf16le')
 +const child = spawn('cscript.exe', ['//nologo', vbsPath], {
 +  windowsHide: true,
 +  stdio: ['ignore', 'pipe', 'pipe'],
@@ -61,10 +61,14 @@ index 0000000..f89330c
 +// A dialog that appears without keyboard focus turns Alt+F4 into the
 +// desktop's shutdown menu — force-activate the dialog a moment after it
 +// appears so close shortcuts land on the dialog itself.
-+setTimeout(() => {
-+  const act = spawn('powershell.exe', ['-NoProfile', '-Command', "$wshell = New-Object -ComObject WScript.Shell; $wshell.AppActivate('Select Workspace Directory')"], { windowsHide: true, stdio: 'ignore' })
-+  act.unref()
-+}, 300)
++// Repeatedly force the dialog to the foreground — a dialog that appears
++// without keyboard focus turns Alt+F4 into the desktop's shutdown menu.
++for (const delay of [80, 200, 400, 700]) {
++  setTimeout(() => {
++    const act = spawn('powershell.exe', ['-NoProfile', '-Command', "$wshell = New-Object -ComObject WScript.Shell; $wshell.AppActivate('请选择工作区目录')"], { windowsHide: true, stdio: 'ignore' })
++    act.unref()
++  }, delay)
++}
 +child.on('close', () => { try { require('node:fs').unlinkSync(vbsPath) } catch { } })
 +
 +let stdout = ''
