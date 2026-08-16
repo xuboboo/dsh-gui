@@ -1,16 +1,16 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..707dc76
+index 0000000..4b93a41
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,110 @@
 +/**
 + * Directory-picker worker (CJS).
 + *
-+ * Instead of spawning its own dialog process (which Windows refuses to bring
-+ * to the foreground while the GUI window is active), this worker asks the
-+ * launcher's loopback HTTP service to open Electron's native directory
-+ * dialog — modal, focused, and visible in both the GUI and the web client.
++ * Primary: asks the launcher's loopback HTTP service (Electron native dialog,
++ * modal + focused, works in GUI and web client alike).
++ * Fallback: cscript Shell.Application.BrowseForFolder with Unicode-codepoint
++ * output and foreground re-activation, so older launchers still work.
 + * Protocol matches the official driver (showing/done/error over IPC).
 + */
 +'use strict'
@@ -25,31 +25,95 @@ index 0000000..707dc76
 +}
 +process.on('disconnect', () => process.exit(0))
 +
-+// Plain send without the disconnect callback: disconnecting here would drain
-+// the event loop and exit this worker before the request settles.
 +send({ kind: 'showing', threadId: 0 })
 +
-+const port = Number(process.env.DSH_GUI_PICKER_PORT || 3082)
-+{
-+  fetch('http://127.0.0.1:' + port + '/pick-directory', {
-+    method: 'POST',
-+    headers: { 'Content-Type': 'application/json' },
-+    body: JSON.stringify({ title }),
++const { spawn } = require('node:child_process')
++const path = require('node:path')
++const fsNative = require('node:fs')
++const os = require('node:os')
++
++// ---- fallback: cscript BrowseForFolder with codepoint output ----
++const VBS_SCRIPT = [
++  'Set objShell = CreateObject("Shell.Application")',
++  'Set objFolder = objShell.BrowseForFolder(0, "Select Workspace Directory", &H41)',
++  'If Not objFolder Is Nothing Then',
++  '  Dim p: p = objFolder.Self.Path',
++  '  Dim i',
++  '  For i = 1 To Len(p)',
++  '    If i > 1 Then WScript.StdOut.Write(" ")',
++  '    WScript.StdOut.Write(AscW(Mid(p, i, 1)))',
++  '  Next',
++  'End If',
++].join('\r\n')
++
++function pickViaCscript() {
++  const vbsPath = path.join(os.tmpdir(), 'dsh-picker-' + process.pid + '.vbs')
++  fsNative.writeFileSync(vbsPath, '\ufeff' + VBS_SCRIPT, 'utf16le')
++  const child = spawn('cscript.exe', ['//nologo', vbsPath], {
++    windowsHide: true,
++    stdio: ['ignore', 'pipe', 'pipe'],
 +  })
-+    .then((response) => response.json())
-+    .then((data) => {
-+      if (data !== null && typeof data === 'object' && data.cancelled === true) {
-+        post({ kind: 'done', path: null })
-+      } else if (data !== null && typeof data === 'object' && typeof data.path === 'string') {
-+        post({ kind: 'done', path: data.path })
-+      } else {
-+        post({ kind: 'error', message: 'picker returned an invalid result' })
-+      }
-+    })
-+    .catch((error) => {
-+      post({ kind: 'error', message: 'picker request failed: ' + String(error && error.message ? error.message : error) })
-+    })
++  // Best-effort foreground activation so Alt+F4 closes the dialog itself.
++  for (const delay of [80, 200, 400, 700]) {
++    setTimeout(() => {
++      const act = spawn('powershell.exe', ['-NoProfile', '-Command', "$wshell = New-Object -ComObject WScript.Shell; $wshell.AppActivate('Select Workspace Directory')"], { windowsHide: true, stdio: 'ignore' })
++      act.unref()
++    }, delay)
++  }
++  let stdout = ''
++  let stderr = ''
++  child.stdout.on('data', (d) => { stdout += String(d) })
++  child.stderr.on('data', (d) => { stderr += String(d) })
++  child.on('error', (error) => {
++    try { fsNative.unlinkSync(vbsPath) } catch { }
++    post({ kind: 'error', message: String(error && error.message ? error.message : error) })
++  })
++  child.on('close', (code) => {
++    try { fsNative.unlinkSync(vbsPath) } catch { }
++    const line = stdout.trim().split(/\r?\n/)[0] || ''
++    let picked = null
++    if (line.length > 0) {
++      try {
++        const codes = line.split(' ').filter(Boolean).map((n) => Number.parseInt(n, 10))
++        if (codes.length > 0) picked = String.fromCharCode(...codes)
++      } catch { picked = line }
++    }
++    if (code === 0 && picked !== null && picked.length > 0) {
++      post({ kind: 'done', path: picked })
++    } else if (code === 0) {
++      post({ kind: 'done', path: null })
++    } else {
++      post({ kind: 'error', message: 'folder dialog failed (exit ' + code + '): ' + stderr.slice(0, 200) })
++    }
++  })
 +}
++
++// ---- primary: launcher HTTP service (Electron native dialog) ----
++const port = Number(process.env.DSH_GUI_PICKER_PORT || 3082)
++const controller = new AbortController()
++const timer = setTimeout(() => controller.abort(), 1200)
++fetch('http://127.0.0.1:' + port + '/pick-directory', {
++  method: 'POST',
++  headers: { 'Content-Type': 'application/json' },
++  body: JSON.stringify({ title }),
++  signal: controller.signal,
++})
++  .then((response) => response.json())
++  .then((data) => {
++    clearTimeout(timer)
++    if (data !== null && typeof data === 'object' && data.cancelled === true) {
++      post({ kind: 'done', path: null })
++    } else if (data !== null && typeof data === 'object' && typeof data.path === 'string') {
++      post({ kind: 'done', path: data.path })
++    } else {
++      pickViaCscript()
++    }
++  })
++  .catch(() => {
++    clearTimeout(timer)
++    // Launcher service unavailable (older launcher): fall back to cscript.
++    pickViaCscript()
++  })
 diff --git a/node_modules/@koromix/koffi-win32-x64/index.js b/node_modules/@koromix/koffi-win32-x64/index.js
 new file mode 100644
 index 0000000..6dba06c
