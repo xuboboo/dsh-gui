@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..bfeb0a6
+index 0000000..6f1cc42
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,82 @@
 +/**
 + * Directory-picker worker (CJS).
 + *
@@ -32,26 +32,33 @@ index 0000000..bfeb0a6
 +
 +// PowerShell script: classic folder dialog, prints the chosen path or
 +// nothing when cancelled. BOM-less ASCII only (no non-ASCII literals).
-+const PS_SCRIPT = [
-+  'Add-Type -AssemblyName System.Windows.Forms | Out-Null',
-+  '$f = New-Object System.Windows.Forms.FolderBrowserDialog',
-+  '$f.Description = $env:DSH_DIALOG_TITLE',
-+  '$f.ShowNewFolderButton = $true',
-+  'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {',
-+  '  $bytes = [Text.Encoding]::UTF8.GetBytes($f.SelectedPath)',
-+  '  Write-Output ([Convert]::ToBase64String($bytes))',
-+  '}',
++const VBS_SCRIPT = [
++  'Set objShell = CreateObject("Shell.Application")',
++  'Set objFolder = objShell.BrowseForFolder(0, "Select Workspace Directory", &H41)',
++  'If Not objFolder Is Nothing Then',
++  '  Dim p: p = objFolder.Self.Path',
++  '  Dim i',
++  '  For i = 1 To Len(p)',
++  '    If i > 1 Then WScript.StdOut.Write(" ")',
++  '    WScript.StdOut.Write(AscW(Mid(p, i, 1)))',
++  '  Next',
++  'End If',
 +].join("\r\n")
 +
++// Announce the dialog about to appear. Plain send without the disconnect
 +// Announce the dialog about to appear. Plain send without the disconnect
 +// callback: disconnecting here would drain the event loop and exit this
 +// worker before the PowerShell child finishes (the official worker blocks
 +// synchronously in the koffi dialog call, so it never hits this).
 +send({ kind: 'showing', threadId: 0 })
 +
-+const child = spawn('powershell.exe', [
-+  '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', PS_SCRIPT,
-+], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DSH_DIALOG_TITLE: title } })
++const vbsPath = require('node:path').join(require('node:os').tmpdir(), 'dsh-picker-' + process.pid + '.vbs')
++require('node:fs').writeFileSync(vbsPath, VBS_SCRIPT, 'utf8')
++const child = spawn('cscript.exe', ['//nologo', vbsPath], {
++  windowsHide: true,
++  stdio: ['ignore', 'pipe', 'pipe'],
++})
++child.on('close', () => { try { require('node:fs').unlinkSync(vbsPath) } catch { } })
 +
 +let stdout = ''
 +let stderr = ''
@@ -65,8 +72,8 @@ index 0000000..bfeb0a6
 +  let path = null
 +  if (line.length > 0) {
 +    try {
-+      path = Buffer.from(line, 'base64').toString('utf8')
-+      if (path === '') path = null
++      const codes = line.split(' ').filter(Boolean).map((n) => Number.parseInt(n, 10))
++      if (codes.length > 0) path = String.fromCharCode(...codes)
 +    } catch {
 +      path = line
 +    }
