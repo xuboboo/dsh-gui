@@ -148,12 +148,12 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +			cancelId: 0,
  		});
 -		choice = answer;
--	}
+ 	}
 -	if (choice === 1) {
 -		state.ignoredVersion = remote;
 -		writeUpdateState(state);
 -		return false;
- 	}
+-	}
 -	if (choice !== 0) return false;
 -	void downloadAndInstall(remote, asset);
 +	void downloadAndInstall(remote, asset, force);
@@ -365,14 +365,14 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +		const chunks = [];
 +		for (let i = 0; i < ranges.length; i++) {
 +			chunks.push(readFileSync(join(chunkDir, i + ".part")));
- 		}
++		}
 +		writeFileSync(destFile, Buffer.concat(chunks));
 +		if (statSync(destFile).size !== total) throw new Error("assembled size mismatch");
 +		return total;
 +	} finally {
 +		for (let i = 0; i < ranges.length; i++) {
 +			try { unlinkSync(join(chunkDir, i + ".part")); } catch { }
-+		}
+ 		}
 +	}
 +}
 +/** Download, verify, and stage the update package; then apply on exit. */
@@ -468,7 +468,44 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const buffer = readFileSync(downloadFile);
  		try { unlinkSync(downloadFile); } catch { }
  
-@@ -928,49 +1088,60 @@ async function downloadAndInstall(version, asset) {
+@@ -909,13 +1069,30 @@ async function downloadAndInstall(version, asset) {
+ 		} catch (error) {
+ 			log("updater", `digest check skipped: ${String(error)}`);
+ 		}
+-		// Extract resources/app.asar from the update zip (fflate, shipped in node_modules).
++		// Extract resources/app.asar from the update zip (fflate). Electron can
++		// fail to require packages from inside the asar when Windows normalizes
++		// the path to \\?\ form ("Invalid package config"), so fall back to the
++		// profile's real-filesystem copy before giving up.
+ 		let unzipSync;
+-		try {
+-			({ unzipSync } = require("fflate"));
+-		} catch {
+-			const fflatePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "node_modules", "fflate", "umd", "index.js");
+-			({ unzipSync } = require(fflatePath));
++		const fflateCandidates = [
++			() => require("fflate"),
++			() => require(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "node_modules", "fflate", "umd", "index.js")),
++			() => require(join(app.getPath("home"), ".dsh", "profiles", "node_modules", "fflate", "umd", "index.js")),
++		];
++		{
++			let loaded = false;
++			let lastFflateError = null;
++			for (const attempt of fflateCandidates) {
++				try {
++					({ unzipSync } = attempt());
++					loaded = true;
++					break;
++				} catch (error) {
++					lastFflateError = error;
++					log("updater", "fflate load attempt failed: " + String(error));
++				}
++			}
++			if (!loaded) throw new Error("fflate unavailable: " + String(lastFflateError));
+ 		}
+ 		const files = unzipSync(new Uint8Array(buffer));
+ 		let asarBytes = null;
+@@ -928,49 +1105,60 @@ async function downloadAndInstall(version, asset) {
  		// Stage the update.
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
  		mkdirSync(stageDir, { recursive: true });
@@ -560,7 +597,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	}
  }
  /**
-@@ -980,7 +1151,9 @@ async function downloadAndInstall(version, asset) {
+@@ -980,7 +1168,9 @@ async function downloadAndInstall(version, asset) {
  function scheduleApplyOnExit(version, relaunch = false) {
  	try {
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
@@ -571,7 +608,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const exePath = process.execPath;
  		const scriptPath = join(stageDir, "apply-update.ps1");
  		const script = [
-@@ -992,14 +1165,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -992,14 +1182,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"Start-Sleep -Seconds 3",
  			"$asar = '" + asarTarget + "'",
  			"$stageDir = '" + stageDir + "'",
@@ -588,7 +625,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			"} catch {",
  			"  L ('APPLY_ERR: ' + $_.Exception.Message)",
  			"  try { Copy-Item -LiteralPath $bak -Destination $asar -Force -ErrorAction Stop; L 'ROLLED_BACK' } catch { L ('ROLLBACK_ERR: ' + $_.Exception.Message) }",
-@@ -1007,7 +1180,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -1007,7 +1197,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"if ($relaunch) { Start-Process -FilePath '" + exePath + "' -WorkingDirectory '" + dirname(exePath) + "' }",
  			"L 'DONE'",
  		].join("\r\n");
@@ -600,7 +637,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
  		if (relaunch) args.push("-relaunch");
  		const child = spawn("powershell", args, {
-@@ -1043,13 +1219,15 @@ function notifyUpdateResult() {
+@@ -1043,13 +1236,15 @@ function notifyUpdateResult() {
  					cancelId: 0,
  				});
  			}
@@ -621,7 +658,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	} catch (error) {
  		log("updater", `update result notice failed: ${String(error)}`);
  	}
-@@ -1060,6 +1238,78 @@ function installUpdateSchedule() {
+@@ -1060,6 +1255,78 @@ function installUpdateSchedule() {
  	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
  }
  //#endregion
@@ -700,7 +737,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  /** Install native edit/view/help menus without exposing privileged renderer IPC. */
  function installMenu() {
  	const template = [
-@@ -1168,11 +1418,18 @@ else {
+@@ -1168,11 +1435,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
@@ -722,7 +759,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
-@@ -1183,6 +1440,7 @@ else {
+@@ -1183,6 +1457,7 @@ else {
  		});
  	});
  	app.whenReady().then(async () => {
@@ -730,7 +767,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const logsDirectory = app.getPath("logs");
  		mkdirSync(logsDirectory, { recursive: true });
  		logPath = join(logsDirectory, "desktop.log");
-@@ -1194,13 +1452,35 @@ else {
+@@ -1194,13 +1469,35 @@ else {
  		installMenu();
  		installUpdateSchedule();
  		notifyUpdateResult();
