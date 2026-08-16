@@ -6,7 +6,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
   * to disable the automatic check (manual check via the Help menu still works).
   */
 -const DSH_GUI_VERSION = "1.0.8";
-+const DSH_GUI_VERSION = "1.0.11";
++const DSH_GUI_VERSION = "1.0.12";
  const UPDATE_REPO = "xuboboo/dsh-gui";
  const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
  const UPDATE_CHECK_DELAY_MS = 8_000;
@@ -557,24 +557,25 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		}
  	} catch (error) {
  		log("updater", `update result notice failed: ${String(error)}`);
-@@ -1060,6 +1201,25 @@ function installUpdateSchedule() {
+@@ -1060,6 +1201,26 @@ function installUpdateSchedule() {
  	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
  }
  //#endregion
 +/**
 + * The runtime loads @deepseek-ai packages from the profile's node_modules,
-+ * not from the asar. Official rc.5 ships a crashing directory-picker worker
-+ * there (readUtf16 over-reads the heap and faults natively on selection),
-+ * so copy our fixed worker.cjs over the profile copy at every startup.
++ * not from the asar, and the profile is re-seeded from app.asar.unpacked at
++ * startup — where the official rc.5 worker (koffi-based) crashes natively on
++ * the packaged Electron binary. This launcher embeds the fixed worker (a
++ * PowerShell FolderBrowserDialog with Base64 output, immune to koffi and to
++ * PS 5.1 OEM stdout encoding) and rewrites the profile copy at every startup.
 + */
++const PICKER_WORKER_B64 = "LyoqCiAqIERpcmVjdG9yeS1waWNrZXIgd29ya2VyIChDSlMpLgogKgogKiBUaGUgb2ZmaWNpYWwgcmMuNSBwYWNrYWdlJ3Mgd29ya2VyIHJlbGllcyBvbiBrb2ZmaSBDT00gY2FsbHMgcGx1cyBtYW51YWwKICogc3RyaW5nIHJlYWRzOyBvbiB0aGUgcGFja2FnZWQgRWxlY3Ryb24gYmluYXJ5IGtvZmZpJ3MgbmF0aXZlIGxheWVyIGZhdWx0cwogKiAobmFwaSBmYXRhbCBlcnJvciBpbiByZWFkVXRmMTYpIGFuZCB0aGUgd29ya2VyIGRpZXMgd2l0aG91dCBhIHJlc3VsdCwKICogc3VyZmFjaW5nIGFzICJ3aW4zMiBmb2xkZXIgZGlhbG9nIHdvcmtlciBleGl0ZWQgYmVmb3JlIHJlcG9ydGluZyBhIHJlc3VsdCIKICogaW4gdGhlIEdVSS4gVGhpcyBpbXBsZW1lbnRhdGlvbiBhdm9pZHMgbmF0aXZlIGJpbmRpbmdzIGVudGlyZWx5OiBpdCBhc2tzCiAqIFBvd2VyU2hlbGwncyBTeXN0ZW0uV2luZG93cy5Gb3Jtcy5Gb2xkZXJCcm93c2VyRGlhbG9nIGZvciB0aGUgZGlyZWN0b3J5LgogKiBUaGUgcHJvdG9jb2wgKHNob3dpbmcvZG9uZS9lcnJvciBvdmVyIHRoZSBwYXJlbnQgSVBDIGNoYW5uZWwpIG1hdGNoZXMgdGhlCiAqIG9mZmljaWFsIGRyaXZlciBpbiBkc2gtaG9zdC1kaXJlY3RvcnktcGlja2VyLW5hdGl2ZS9saWIvaW5kZXguanMuCiAqLwondXNlIHN0cmljdCcKCmNvbnN0IHRpdGxlID0gcHJvY2Vzcy5lbnYuRFNIX0RJQUxPR19USVRMRSA/PyAnJwppZiAodGl0bGUgPT09ICcnKSB0aHJvdyBuZXcgRXJyb3IoJ3dpbjMyLWRpYWxvZy13b3JrZXI6IERTSF9ESUFMT0dfVElUTEUgaXMgcmVxdWlyZWQnKQppZiAocHJvY2Vzcy5zZW5kID09PSB1bmRlZmluZWQpIHRocm93IG5ldyBFcnJvcignd2luMzItZGlhbG9nLXdvcmtlciBtdXN0IHJ1biBhcyBhIGNoaWxkIHByb2Nlc3Mgd2l0aCBhbiBJUEMgY2hhbm5lbCcpCmNvbnN0IHNlbmQgPSBwcm9jZXNzLnNlbmQuYmluZChwcm9jZXNzKQoKY29uc3QgcG9zdCA9IChtZXNzYWdlKSA9PiB7CiAgc2VuZChtZXNzYWdlLCAoKSA9PiB7IGlmIChwcm9jZXNzLmNvbm5lY3RlZCkgcHJvY2Vzcy5kaXNjb25uZWN0KCkgfSkKfQpwcm9jZXNzLm9uKCdkaXNjb25uZWN0JywgKCkgPT4gcHJvY2Vzcy5leGl0KDApKQoKY29uc3QgeyBzcGF3biB9ID0gcmVxdWlyZSgnbm9kZTpjaGlsZF9wcm9jZXNzJykKCi8vIFBvd2VyU2hlbGwgc2NyaXB0OiBjbGFzc2ljIGZvbGRlciBkaWFsb2csIHByaW50cyB0aGUgY2hvc2VuIHBhdGggb3IKLy8gbm90aGluZyB3aGVuIGNhbmNlbGxlZC4gQk9NLWxlc3MgQVNDSUkgb25seSAobm8gbm9uLUFTQ0lJIGxpdGVyYWxzKS4KY29uc3QgUFNfU0NSSVBUID0gWwogICdBZGQtVHlwZSAtQXNzZW1ibHlOYW1lIFN5c3RlbS5XaW5kb3dzLkZvcm1zIHwgT3V0LU51bGwnLAogICckZiA9IE5ldy1PYmplY3QgU3lzdGVtLldpbmRvd3MuRm9ybXMuRm9sZGVyQnJvd3NlckRpYWxvZycsCiAgJyRmLkRlc2NyaXB0aW9uID0gJGVudjpEU0hfRElBTE9HX1RJVExFJywKICAnJGYuU2hvd05ld0ZvbGRlckJ1dHRvbiA9ICR0cnVlJywKICAnaWYgKCRmLlNob3dEaWFsb2coKSAtZXEgW1N5c3RlbS5XaW5kb3dzLkZvcm1zLkRpYWxvZ1Jlc3VsdF06Ok9LKSB7JywKICAnICAkYnl0ZXMgPSBbVGV4dC5FbmNvZGluZ106OlVURjguR2V0Qnl0ZXMoJGYuU2VsZWN0ZWRQYXRoKScsCiAgJyAgV3JpdGUtT3V0cHV0IChbQ29udmVydF06OlRvQmFzZTY0U3RyaW5nKCRieXRlcykpJywKICAnfScsCl0uam9pbigiXHJcbiIpCgovLyBBbm5vdW5jZSB0aGUgZGlhbG9nIGFib3V0IHRvIGFwcGVhci4gUGxhaW4gc2VuZCB3aXRob3V0IHRoZSBkaXNjb25uZWN0Ci8vIGNhbGxiYWNrOiBkaXNjb25uZWN0aW5nIGhlcmUgd291bGQgZHJhaW4gdGhlIGV2ZW50IGxvb3AgYW5kIGV4aXQgdGhpcwovLyB3b3JrZXIgYmVmb3JlIHRoZSBQb3dlclNoZWxsIGNoaWxkIGZpbmlzaGVzICh0aGUgb2ZmaWNpYWwgd29ya2VyIGJsb2NrcwovLyBzeW5jaHJvbm91c2x5IGluIHRoZSBrb2ZmaSBkaWFsb2cgY2FsbCwgc28gaXQgbmV2ZXIgaGl0cyB0aGlzKS4Kc2VuZCh7IGtpbmQ6ICdzaG93aW5nJywgdGhyZWFkSWQ6IDAgfSkKCmNvbnN0IGNoaWxkID0gc3Bhd24oJ3Bvd2Vyc2hlbGwuZXhlJywgWwogICctTm9Qcm9maWxlJywgJy1FeGVjdXRpb25Qb2xpY3knLCAnQnlwYXNzJywgJy1Db21tYW5kJywgUFNfU0NSSVBULApdLCB7IHdpbmRvd3NIaWRlOiB0cnVlLCBzdGRpbzogWydpZ25vcmUnLCAncGlwZScsICdwaXBlJ10sIGVudjogeyAuLi5wcm9jZXNzLmVudiwgRFNIX0RJQUxPR19USVRMRTogdGl0bGUgfSB9KQoKbGV0IHN0ZG91dCA9ICcnCmxldCBzdGRlcnIgPSAnJwpjaGlsZC5zdGRvdXQub24oJ2RhdGEnLCAoZCkgPT4geyBzdGRvdXQgKz0gU3RyaW5nKGQpIH0pCmNoaWxkLnN0ZGVyci5vbignZGF0YScsIChkKSA9PiB7IHN0ZGVyciArPSBTdHJpbmcoZCkgfSkKY2hpbGQub24oJ2Vycm9yJywgKGVycm9yKSA9PiB7CiAgcG9zdCh7IGtpbmQ6ICdlcnJvcicsIG1lc3NhZ2U6IFN0cmluZyhlcnJvciAmJiBlcnJvci5tZXNzYWdlID8gZXJyb3IubWVzc2FnZSA6IGVycm9yKSB9KQp9KQpjaGlsZC5vbignY2xvc2UnLCAoY29kZSkgPT4gewogIGNvbnN0IGxpbmUgPSBzdGRvdXQudHJpbSgpLnNwbGl0KC9ccj9cbi8pWzBdIHx8ICcnCiAgbGV0IHBhdGggPSBudWxsCiAgaWYgKGxpbmUubGVuZ3RoID4gMCkgewogICAgdHJ5IHsKICAgICAgcGF0aCA9IEJ1ZmZlci5mcm9tKGxpbmUsICdiYXNlNjQnKS50b1N0cmluZygndXRmOCcpCiAgICAgIGlmIChwYXRoID09PSAnJykgcGF0aCA9IG51bGwKICAgIH0gY2F0Y2ggewogICAgICBwYXRoID0gbGluZQogICAgfQogIH0KICBpZiAoY29kZSA9PT0gMCAmJiBwYXRoICE9PSBudWxsKSB7CiAgICBwb3N0KHsga2luZDogJ2RvbmUnLCBwYXRoIH0pCiAgfSBlbHNlIGlmIChjb2RlID09PSAwKSB7CiAgICBwb3N0KHsga2luZDogJ2RvbmUnLCBwYXRoOiBudWxsIH0pCiAgfSBlbHNlIHsKICAgIHBvc3QoeyBraW5kOiAnZXJyb3InLCBtZXNzYWdlOiAnZm9sZGVyIGRpYWxvZyBmYWlsZWQgKGV4aXQgJyArIGNvZGUgKyAnKTogJyArIHN0ZGVyci5zbGljZSgwLCAyMDApIH0pCiAgfQp9KQo=";
 +function healProfileDirectoryPicker() {
 +	try {
-+		const profileRoot = join(app.getPath("home"), ".dsh", "profiles", "node_modules");
-+		const target = join(profileRoot, "@deepseek-ai", "dsh-host-directory-picker-native", "lib", "worker.cjs");
-+		if (!existsSync(target)) return;
-+		const source = fileURLToPath(new URL("../../node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs", import.meta.url));
-+		if (!existsSync(source)) return;
-+		copyFileSync(source, target);
++		const target = join(app.getPath("home"), ".dsh", "profiles", "node_modules", "@deepseek-ai", "dsh-host-directory-picker-native", "lib", "worker.cjs");
++		const source = Buffer.from(PICKER_WORKER_B64, "base64").toString("utf8");
++		mkdirSync(dirname(target), { recursive: true });
++		writeFileSync(target, source, "utf8");
 +		log("desktop", "profile directory-picker worker healed");
 +	} catch (error) {
 +		log("desktop", `profile heal skipped: ${String(error)}`);
@@ -583,7 +584,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  /** Install native edit/view/help menus without exposing privileged renderer IPC. */
  function installMenu() {
  	const template = [
-@@ -1168,11 +1328,18 @@ else {
+@@ -1168,11 +1329,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
@@ -604,7 +605,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
-@@ -1183,6 +1350,7 @@ else {
+@@ -1183,6 +1351,7 @@ else {
  		});
  	});
  	app.whenReady().then(async () => {
@@ -612,7 +613,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const logsDirectory = app.getPath("logs");
  		mkdirSync(logsDirectory, { recursive: true });
  		logPath = join(logsDirectory, "desktop.log");
-@@ -1194,6 +1362,18 @@ else {
+@@ -1194,6 +1363,18 @@ else {
  		installMenu();
  		installUpdateSchedule();
  		notifyUpdateResult();
