@@ -89,19 +89,19 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +			cancelId: 0,
  		});
 -		choice = answer;
- 	}
+-	}
 -	if (choice === 1) {
 -		state.ignoredVersion = remote;
 -		writeUpdateState(state);
 -		return false;
--	}
+ 	}
 -	if (choice !== 0) return false;
 -	void downloadAndInstall(remote, asset);
 +	void downloadAndInstall(remote, asset, force);
  	return true;
  }
  
-@@ -599,47 +622,68 @@ function showBrandDialog(opts) {
+@@ -599,47 +622,73 @@ function showBrandDialog(opts) {
  		noLink: true,
  	}).then(({ response }) => response);
  }
@@ -194,6 +194,11 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +	void wc.executeJavaScript(js).catch(() => { });
 +	if (toastPoll !== null) clearInterval(toastPoll);
 +	toastPoll = setInterval(() => {
++		if (wc.isDestroyed()) {
++			clearInterval(toastPoll);
++			toastPoll = null;
++			return;
++		}
 +		void wc.executeJavaScript("window.__dshToastChoice").then((choice) => {
 +			if (choice === "restart") {
 +				clearInterval(toastPoll);
@@ -210,7 +215,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  }
  /**
   * Direct HTTPS download with manual redirect following (up to 5 hops) and
-@@ -697,7 +741,7 @@ async function downloadStream(url, destPath, onProgress) {
+@@ -697,7 +746,7 @@ async function downloadStream(url, destPath, onProgress) {
  			let received = 0;
  			response.on("data", (chunk) => {
  				received += chunk.length;
@@ -219,7 +224,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			});
  			response.pipe(file);
  			file.on("finish", () => { file.close(() => resolve(received)); });
-@@ -728,7 +772,7 @@ function systemProxyUrl() {
+@@ -728,7 +777,7 @@ function systemProxyUrl() {
  /** Download with curl.exe (direct or via proxy). Resolves the file size. */
  function downloadViaCurl(url, dest, proxy, onProgress, total) {
  	return new Promise((resolve, reject) => {
@@ -228,7 +233,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
  		args.push(url);
  		const child = spawn("curl.exe", args, {
-@@ -785,13 +829,87 @@ async function assetDownloadUrl(asset) {
+@@ -785,13 +834,87 @@ async function assetDownloadUrl(asset) {
  	}
  	return undefined;
  }
@@ -321,7 +326,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		// Multi-channel download with live progress: https stream (direct) →
  		// curl direct → curl via system proxy → fetch (system proxy). Every
  		// channel fails fast (20s connect timeout) so the user always gets
-@@ -802,14 +920,24 @@ async function downloadAndInstall(version, asset) {
+@@ -802,14 +925,24 @@ async function downloadAndInstall(version, asset) {
  		let downloadedSize = 0;
  		let lastError = null;
  		const cdnUrl = await assetDownloadUrl(asset);
@@ -351,7 +356,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `stream direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -820,10 +948,7 @@ async function downloadAndInstall(version, asset) {
+@@ -820,10 +953,7 @@ async function downloadAndInstall(version, asset) {
  			// channel 2: curl direct
  			if (downloadedSize === 0) {
  				try {
@@ -363,7 +368,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `curl direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -834,12 +959,9 @@ async function downloadAndInstall(version, asset) {
+@@ -834,12 +964,9 @@ async function downloadAndInstall(version, asset) {
  			// channel 3: curl via system proxy
  			if (downloadedSize === 0) {
  				try {
@@ -378,7 +383,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						log("updater", `curl proxy OK (${downloadedSize} bytes, proxy ${proxy})`);
  					}
  				} catch (error) {
-@@ -854,7 +976,6 @@ async function downloadAndInstall(version, asset) {
+@@ -854,7 +981,6 @@ async function downloadAndInstall(version, asset) {
  			try {
  				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
  				for (const source of sources) {
@@ -386,7 +391,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					const controller = new AbortController();
  					const timer = setTimeout(() => controller.abort(), 3 * 60_000);
  					let response;
-@@ -874,8 +995,7 @@ async function downloadAndInstall(version, asset) {
+@@ -874,8 +1000,7 @@ async function downloadAndInstall(version, asset) {
  								if (done) break;
  								chunks.push(Buffer.from(value));
  								received += value.length;
@@ -396,7 +401,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						} else {
  							chunks.push(Buffer.from(await response.arrayBuffer()));
  						}
-@@ -892,7 +1012,6 @@ async function downloadAndInstall(version, asset) {
+@@ -892,7 +1017,6 @@ async function downloadAndInstall(version, asset) {
  			}
  		}
  		if (downloadedSize === 0) throw new Error("下载失败：" + String(lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误")));
@@ -404,7 +409,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const buffer = readFileSync(downloadFile);
  		try { unlinkSync(downloadFile); } catch { }
  
-@@ -928,49 +1047,57 @@ async function downloadAndInstall(version, asset) {
+@@ -928,49 +1052,58 @@ async function downloadAndInstall(version, asset) {
  		// Stage the update.
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
  		mkdirSync(stageDir, { recursive: true });
@@ -451,12 +456,12 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +				cancelId: 0,
  			});
 -			restart = restartAnswer;
--		}
+ 		}
 -		if (restart !== 0) {
 -			log("updater", "user chose to restart later; update will apply on exit");
 -			closeProgressWindow();
 -			return;
- 		}
+-		}
 -		scheduleApplyOnExit(version, true);
 +	} finally {
 +		updateInFlight = false;
@@ -474,6 +479,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
 +		copyFileSync(join(stageDir, "payload.bin"), fileURLToPath(new URL("../../../app.asar", import.meta.url)));
 +		log("updater", "payload applied in-place");
++		writeFileSync(join(stageDir, "applied.txt"), version + "|" + new Date().toISOString(), "utf8");
 +		app.relaunch();
  		app.exit(0);
  	} catch (error) {
@@ -493,7 +499,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	}
  }
  /**
-@@ -980,7 +1107,9 @@ async function downloadAndInstall(version, asset) {
+@@ -980,7 +1113,9 @@ async function downloadAndInstall(version, asset) {
  function scheduleApplyOnExit(version, relaunch = false) {
  	try {
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
@@ -504,7 +510,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const exePath = process.execPath;
  		const scriptPath = join(stageDir, "apply-update.ps1");
  		const script = [
-@@ -992,14 +1121,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -992,14 +1127,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"Start-Sleep -Seconds 3",
  			"$asar = '" + asarTarget + "'",
  			"$stageDir = '" + stageDir + "'",
@@ -521,7 +527,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			"} catch {",
  			"  L ('APPLY_ERR: ' + $_.Exception.Message)",
  			"  try { Copy-Item -LiteralPath $bak -Destination $asar -Force -ErrorAction Stop; L 'ROLLED_BACK' } catch { L ('ROLLBACK_ERR: ' + $_.Exception.Message) }",
-@@ -1007,7 +1136,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -1007,7 +1142,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"if ($relaunch) { Start-Process -FilePath '" + exePath + "' -WorkingDirectory '" + dirname(exePath) + "' }",
  			"L 'DONE'",
  		].join("\r\n");
@@ -533,16 +539,25 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
  		if (relaunch) args.push("-relaunch");
  		const child = spawn("powershell", args, {
-@@ -1046,7 +1178,7 @@ function notifyUpdateResult() {
+@@ -1045,10 +1183,13 @@ function notifyUpdateResult() {
+ 			}
  			unlinkSync(applied);
  		}
- 		// Best-effort cleanup of staging leftovers (backup stays for rollback).
+-		// Best-effort cleanup of staging leftovers (backup stays for rollback).
 -		for (const name of ["manifest.json", "payload.asar", "apply.log"]) {
-+		for (const name of ["manifest.json", "payload.bin", "apply.log"]) {
- 			const p = join(stageDir, name);
- 			if (existsSync(p)) { try { unlinkSync(p); } catch { } }
+-			const p = join(stageDir, name);
+-			if (existsSync(p)) { try { unlinkSync(p); } catch { } }
++		// Cleanup happens only right after an applied update; a staged-but-not
++		// applied payload is kept so the restart toast can resurface (F1).
++		if (existsSync(applied)) {
++			for (const name of ["manifest.json", "payload.bin", "apply.log"]) {
++				const p = join(stageDir, name);
++				if (existsSync(p)) { try { unlinkSync(p); } catch { } }
++			}
  		}
-@@ -1168,11 +1300,17 @@ else {
+ 	} catch (error) {
+ 		log("updater", `update result notice failed: ${String(error)}`);
+@@ -1168,11 +1309,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
@@ -555,6 +570,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +					try {
 +						copyFileSync(join(app.getPath("userData"), "dsh-gui-update", "payload.bin"), fileURLToPath(new URL("../../../app.asar", import.meta.url)));
 +						log("updater", "payload applied in-place on exit");
++						writeFileSync(join(app.getPath("userData"), "dsh-gui-update", "applied.txt"), manifest.version + "|" + new Date().toISOString(), "utf8");
 +					} catch (error) {
 +						log("updater", `in-place apply on exit failed: ${String(error)}`);
 +						scheduleApplyOnExit(manifest.version, false);
@@ -562,3 +578,22 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
+@@ -1194,6 +1342,18 @@ else {
+ 		installMenu();
+ 		installUpdateSchedule();
+ 		notifyUpdateResult();
++		// Surface a previously staged update's restart prompt right away.
++		try {
++			const stagedManifest = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
++			if (isUpdateStaged() && existsSync(stagedManifest)) {
++				const manifest = JSON.parse(readFileSync(stagedManifest, "utf8"));
++				if (typeof manifest.version === "string" && manifest.version !== DSH_GUI_VERSION) {
++					setTimeout(() => showRestartToast(manifest.version), 2_000);
++				}
++			}
++		} catch (error) {
++			log("updater", `staged toast failed: ${String(error)}`);
++		}
+ 		const window = createWindow();
+ 		try {
+ 			await loadWindow(window, await startHarness());
