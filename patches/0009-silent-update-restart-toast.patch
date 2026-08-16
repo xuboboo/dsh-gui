@@ -1,7 +1,15 @@
 diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 --- a/desktop/lib/main.js
 +++ b/desktop/lib/main.js
-@@ -392,7 +392,7 @@ async function restartHarness() {
+@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
+ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+ import { dirname, join } from "node:path";
+ import { createInterface } from "node:readline";
++import { createServer } from "node:http";
+ import { fileURLToPath } from "node:url";
+ import { BrowserWindow, Menu, app, dialog, Notification, session, shell } from "electron";
+ //#region src/runtime.ts
+@@ -392,7 +393,7 @@ async function restartHarness() {
   * All user interaction is native dialogs; set DSH_GUI_DISABLE_AUTO_UPDATE=1
   * to disable the automatic check (manual check via the Help menu still works).
   */
@@ -10,7 +18,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  const UPDATE_REPO = "xuboboo/dsh-gui";
  const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
  const UPDATE_CHECK_DELAY_MS = 8_000;
-@@ -436,7 +436,18 @@ function writeUpdateState(state) {
+@@ -436,7 +437,18 @@ function writeUpdateState(state) {
  }
  /** Whether an update is currently staged and applied by the helper script. */
  function isUpdateStaged() {
@@ -30,7 +38,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  }
  /** Fetch helper with timeout. */
  async function fetchJson(url, timeoutMs = 15_000) {
-@@ -533,6 +544,10 @@ async function checkForUpdate(force = false) {
+@@ -533,6 +545,10 @@ async function checkForUpdate(force = false) {
  	if (!force && state.ignoredVersion === remote) return false;
  	const asset = asarUpdateAsset(release, remote);
  	if (asset === undefined) {
@@ -41,7 +49,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const answer = await showBrandDialog({
  			title: "发现新版本",
  			message: "dsh-gui 新版本 v" + remote + "（当前 v" + DSH_GUI_VERSION + "）",
-@@ -548,30 +563,38 @@ async function checkForUpdate(force = false) {
+@@ -548,30 +564,38 @@ async function checkForUpdate(force = false) {
  		}
  		return false;
  	}
@@ -89,19 +97,19 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +			cancelId: 0,
  		});
 -		choice = answer;
- 	}
+-	}
 -	if (choice === 1) {
 -		state.ignoredVersion = remote;
 -		writeUpdateState(state);
 -		return false;
--	}
+ 	}
 -	if (choice !== 0) return false;
 -	void downloadAndInstall(remote, asset);
 +	void downloadAndInstall(remote, asset, force);
  	return true;
  }
  
-@@ -599,47 +622,73 @@ function showBrandDialog(opts) {
+@@ -599,47 +623,73 @@ function showBrandDialog(opts) {
  		noLink: true,
  	}).then(({ response }) => response);
  }
@@ -215,7 +223,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  }
  /**
   * Direct HTTPS download with manual redirect following (up to 5 hops) and
-@@ -697,7 +746,7 @@ async function downloadStream(url, destPath, onProgress) {
+@@ -697,7 +747,7 @@ async function downloadStream(url, destPath, onProgress) {
  			let received = 0;
  			response.on("data", (chunk) => {
  				received += chunk.length;
@@ -224,7 +232,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			});
  			response.pipe(file);
  			file.on("finish", () => { file.close(() => resolve(received)); });
-@@ -728,7 +777,7 @@ function systemProxyUrl() {
+@@ -728,7 +778,7 @@ function systemProxyUrl() {
  /** Download with curl.exe (direct or via proxy). Resolves the file size. */
  function downloadViaCurl(url, dest, proxy, onProgress, total) {
  	return new Promise((resolve, reject) => {
@@ -233,7 +241,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
  		args.push(url);
  		const child = spawn("curl.exe", args, {
-@@ -785,13 +834,87 @@ async function assetDownloadUrl(asset) {
+@@ -785,13 +835,87 @@ async function assetDownloadUrl(asset) {
  	}
  	return undefined;
  }
@@ -326,7 +334,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		// Multi-channel download with live progress: https stream (direct) →
  		// curl direct → curl via system proxy → fetch (system proxy). Every
  		// channel fails fast (20s connect timeout) so the user always gets
-@@ -802,14 +925,24 @@ async function downloadAndInstall(version, asset) {
+@@ -802,14 +926,24 @@ async function downloadAndInstall(version, asset) {
  		let downloadedSize = 0;
  		let lastError = null;
  		const cdnUrl = await assetDownloadUrl(asset);
@@ -356,7 +364,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `stream direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -820,10 +953,7 @@ async function downloadAndInstall(version, asset) {
+@@ -820,10 +954,7 @@ async function downloadAndInstall(version, asset) {
  			// channel 2: curl direct
  			if (downloadedSize === 0) {
  				try {
@@ -368,7 +376,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `curl direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -834,12 +964,9 @@ async function downloadAndInstall(version, asset) {
+@@ -834,12 +965,9 @@ async function downloadAndInstall(version, asset) {
  			// channel 3: curl via system proxy
  			if (downloadedSize === 0) {
  				try {
@@ -383,7 +391,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						log("updater", `curl proxy OK (${downloadedSize} bytes, proxy ${proxy})`);
  					}
  				} catch (error) {
-@@ -854,7 +981,6 @@ async function downloadAndInstall(version, asset) {
+@@ -854,7 +982,6 @@ async function downloadAndInstall(version, asset) {
  			try {
  				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
  				for (const source of sources) {
@@ -391,7 +399,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					const controller = new AbortController();
  					const timer = setTimeout(() => controller.abort(), 3 * 60_000);
  					let response;
-@@ -874,8 +1000,7 @@ async function downloadAndInstall(version, asset) {
+@@ -874,8 +1001,7 @@ async function downloadAndInstall(version, asset) {
  								if (done) break;
  								chunks.push(Buffer.from(value));
  								received += value.length;
@@ -401,7 +409,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						} else {
  							chunks.push(Buffer.from(await response.arrayBuffer()));
  						}
-@@ -892,7 +1017,6 @@ async function downloadAndInstall(version, asset) {
+@@ -892,7 +1018,6 @@ async function downloadAndInstall(version, asset) {
  			}
  		}
  		if (downloadedSize === 0) throw new Error("下载失败：" + String(lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误")));
@@ -409,7 +417,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const buffer = readFileSync(downloadFile);
  		try { unlinkSync(downloadFile); } catch { }
  
-@@ -928,49 +1052,58 @@ async function downloadAndInstall(version, asset) {
+@@ -928,49 +1053,58 @@ async function downloadAndInstall(version, asset) {
  		// Stage the update.
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
  		mkdirSync(stageDir, { recursive: true });
@@ -456,12 +464,12 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +				cancelId: 0,
  			});
 -			restart = restartAnswer;
--		}
+ 		}
 -		if (restart !== 0) {
 -			log("updater", "user chose to restart later; update will apply on exit");
 -			closeProgressWindow();
 -			return;
- 		}
+-		}
 -		scheduleApplyOnExit(version, true);
 +	} finally {
 +		updateInFlight = false;
@@ -499,7 +507,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	}
  }
  /**
-@@ -980,7 +1113,9 @@ async function downloadAndInstall(version, asset) {
+@@ -980,7 +1114,9 @@ async function downloadAndInstall(version, asset) {
  function scheduleApplyOnExit(version, relaunch = false) {
  	try {
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
@@ -510,7 +518,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const exePath = process.execPath;
  		const scriptPath = join(stageDir, "apply-update.ps1");
  		const script = [
-@@ -992,14 +1127,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -992,14 +1128,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"Start-Sleep -Seconds 3",
  			"$asar = '" + asarTarget + "'",
  			"$stageDir = '" + stageDir + "'",
@@ -527,7 +535,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			"} catch {",
  			"  L ('APPLY_ERR: ' + $_.Exception.Message)",
  			"  try { Copy-Item -LiteralPath $bak -Destination $asar -Force -ErrorAction Stop; L 'ROLLED_BACK' } catch { L ('ROLLBACK_ERR: ' + $_.Exception.Message) }",
-@@ -1007,7 +1142,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -1007,7 +1143,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"if ($relaunch) { Start-Process -FilePath '" + exePath + "' -WorkingDirectory '" + dirname(exePath) + "' }",
  			"L 'DONE'",
  		].join("\r\n");
@@ -539,7 +547,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
  		if (relaunch) args.push("-relaunch");
  		const child = spawn("powershell", args, {
-@@ -1045,10 +1183,13 @@ function notifyUpdateResult() {
+@@ -1045,10 +1184,13 @@ function notifyUpdateResult() {
  			}
  			unlinkSync(applied);
  		}
@@ -557,10 +565,60 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		}
  	} catch (error) {
  		log("updater", `update result notice failed: ${String(error)}`);
-@@ -1060,6 +1201,26 @@ function installUpdateSchedule() {
+@@ -1060,6 +1202,76 @@ function installUpdateSchedule() {
  	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
  }
  //#endregion
++/**
++ * Local loopback HTTP service that opens the native directory dialog in THIS
++ * process. The runtime's picker worker previously spawned its own dialog
++ * process, which Windows refused to bring to the foreground while the GUI
++ * window was active — users saw nothing (or worse, keystrokes hitting the
++ * desktop's shutdown menu). A dialog owned by the visible window is always
++ * modal, focused, and visible for both the GUI and the web client.
++ */
++function startPickerHttpServer() {
++	try {
++		const server = createServer((req, res) => {
++			if (req.method !== "POST" || req.url !== "/pick-directory") {
++				res.writeHead(404);
++				res.end();
++				return;
++			}
++			let body = "";
++			req.on("data", (chunk) => { body += String(chunk); });
++			req.on("end", async () => {
++				let title = "请选择工作区目录";
++				try {
++					const parsed = JSON.parse(body);
++					if (typeof parsed.title === "string" && parsed.title.length > 0) title = parsed.title;
++				} catch { }
++				const respond = (payload) => {
++					res.writeHead(200, { "Content-Type": "application/json" });
++					res.end(JSON.stringify(payload));
++				};
++				try {
++					const result = await dialog.showOpenDialog(mainWindow !== void 0 && !mainWindow.isDestroyed() ? mainWindow : void 0, {
++						title,
++						properties: ["openDirectory", "createDirectory"],
++					});
++					if (result.canceled) respond({ cancelled: true });
++					else respond({ path: result.filePaths[0] ?? null });
++				} catch (error) {
++					respond({ error: error instanceof Error ? error.message : String(error) });
++				}
++			});
++		});
++		server.listen(0, "127.0.0.1", () => {
++			const address = server.address();
++			const port = typeof address === "object" && address !== null ? address.port : 0;
++			process.env.DSH_GUI_PICKER_PORT = String(port);
++			log("desktop", "picker http service on 127.0.0.1:" + String(port));
++		});
++	} catch (error) {
++		log("desktop", "picker http service failed: " + String(error));
++	}
++}
 +/**
 + * The runtime loads @deepseek-ai packages from the profile's node_modules,
 + * not from the asar, and the profile is re-seeded from app.asar.unpacked at
@@ -569,7 +627,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 + * PowerShell FolderBrowserDialog with Base64 output, immune to koffi and to
 + * PS 5.1 OEM stdout encoding) and rewrites the profile copy at every startup.
 + */
-+const PICKER_WORKER_B64 = "LyoqCiAqIERpcmVjdG9yeS1waWNrZXIgd29ya2VyIChDSlMpLgogKgogKiBUaGUgb2ZmaWNpYWwgcmMuNSBwYWNrYWdlJ3Mgd29ya2VyIHJlbGllcyBvbiBrb2ZmaSBDT00gY2FsbHMgcGx1cyBtYW51YWwKICogc3RyaW5nIHJlYWRzOyBvbiB0aGUgcGFja2FnZWQgRWxlY3Ryb24gYmluYXJ5IGtvZmZpJ3MgbmF0aXZlIGxheWVyIGZhdWx0cwogKiAobmFwaSBmYXRhbCBlcnJvciBpbiByZWFkVXRmMTYpIGFuZCB0aGUgd29ya2VyIGRpZXMgd2l0aG91dCBhIHJlc3VsdCwKICogc3VyZmFjaW5nIGFzICJ3aW4zMiBmb2xkZXIgZGlhbG9nIHdvcmtlciBleGl0ZWQgYmVmb3JlIHJlcG9ydGluZyBhIHJlc3VsdCIKICogaW4gdGhlIEdVSS4gVGhpcyBpbXBsZW1lbnRhdGlvbiBhdm9pZHMgbmF0aXZlIGJpbmRpbmdzIGVudGlyZWx5OiBpdCBhc2tzCiAqIFBvd2VyU2hlbGwncyBTeXN0ZW0uV2luZG93cy5Gb3Jtcy5Gb2xkZXJCcm93c2VyRGlhbG9nIGZvciB0aGUgZGlyZWN0b3J5LgogKiBUaGUgcHJvdG9jb2wgKHNob3dpbmcvZG9uZS9lcnJvciBvdmVyIHRoZSBwYXJlbnQgSVBDIGNoYW5uZWwpIG1hdGNoZXMgdGhlCiAqIG9mZmljaWFsIGRyaXZlciBpbiBkc2gtaG9zdC1kaXJlY3RvcnktcGlja2VyLW5hdGl2ZS9saWIvaW5kZXguanMuCiAqLwondXNlIHN0cmljdCcKCmNvbnN0IHRpdGxlID0gcHJvY2Vzcy5lbnYuRFNIX0RJQUxPR19USVRMRSA/PyAnJwppZiAodGl0bGUgPT09ICcnKSB0aHJvdyBuZXcgRXJyb3IoJ3dpbjMyLWRpYWxvZy13b3JrZXI6IERTSF9ESUFMT0dfVElUTEUgaXMgcmVxdWlyZWQnKQppZiAocHJvY2Vzcy5zZW5kID09PSB1bmRlZmluZWQpIHRocm93IG5ldyBFcnJvcignd2luMzItZGlhbG9nLXdvcmtlciBtdXN0IHJ1biBhcyBhIGNoaWxkIHByb2Nlc3Mgd2l0aCBhbiBJUEMgY2hhbm5lbCcpCmNvbnN0IHNlbmQgPSBwcm9jZXNzLnNlbmQuYmluZChwcm9jZXNzKQoKY29uc3QgcG9zdCA9IChtZXNzYWdlKSA9PiB7CiAgc2VuZChtZXNzYWdlLCAoKSA9PiB7IGlmIChwcm9jZXNzLmNvbm5lY3RlZCkgcHJvY2Vzcy5kaXNjb25uZWN0KCkgfSkKfQpwcm9jZXNzLm9uKCdkaXNjb25uZWN0JywgKCkgPT4gcHJvY2Vzcy5leGl0KDApKQoKY29uc3QgeyBzcGF3biB9ID0gcmVxdWlyZSgnbm9kZTpjaGlsZF9wcm9jZXNzJykKCi8vIFBvd2VyU2hlbGwgc2NyaXB0OiBjbGFzc2ljIGZvbGRlciBkaWFsb2csIHByaW50cyB0aGUgY2hvc2VuIHBhdGggb3IKLy8gbm90aGluZyB3aGVuIGNhbmNlbGxlZC4gQk9NLWxlc3MgQVNDSUkgb25seSAobm8gbm9uLUFTQ0lJIGxpdGVyYWxzKS4KY29uc3QgVkJTX1NDUklQVCA9IFsKICAnU2V0IG9ialNoZWxsID0gQ3JlYXRlT2JqZWN0KCJTaGVsbC5BcHBsaWNhdGlvbiIpJywKICAnU2V0IG9iakZvbGRlciA9IG9ialNoZWxsLkJyb3dzZUZvckZvbGRlcigwLCAi6K+36YCJ5oup5bel5L2c5Yy655uu5b2VIiwgJkg0MSknLAogICdJZiBOb3Qgb2JqRm9sZGVyIElzIE5vdGhpbmcgVGhlbicsCiAgJyAgRGltIHA6IHAgPSBvYmpGb2xkZXIuU2VsZi5QYXRoJywKICAnICBEaW0gaScsCiAgJyAgRm9yIGkgPSAxIFRvIExlbihwKScsCiAgJyAgICBJZiBpID4gMSBUaGVuIFdTY3JpcHQuU3RkT3V0LldyaXRlKCIgIiknLAogICcgICAgV1NjcmlwdC5TdGRPdXQuV3JpdGUoQXNjVyhNaWQocCwgaSwgMSkpKScsCiAgJyAgTmV4dCcsCiAgJ0VuZCBJZicsCl0uam9pbigiXHJcbiIpCgovLyBBbm5vdW5jZSB0aGUgZGlhbG9nIGFib3V0IHRvIGFwcGVhci4gUGxhaW4gc2VuZCB3aXRob3V0IHRoZSBkaXNjb25uZWN0Ci8vIEFubm91bmNlIHRoZSBkaWFsb2cgYWJvdXQgdG8gYXBwZWFyLiBQbGFpbiBzZW5kIHdpdGhvdXQgdGhlIGRpc2Nvbm5lY3QKLy8gY2FsbGJhY2s6IGRpc2Nvbm5lY3RpbmcgaGVyZSB3b3VsZCBkcmFpbiB0aGUgZXZlbnQgbG9vcCBhbmQgZXhpdCB0aGlzCi8vIHdvcmtlciBiZWZvcmUgdGhlIFBvd2VyU2hlbGwgY2hpbGQgZmluaXNoZXMgKHRoZSBvZmZpY2lhbCB3b3JrZXIgYmxvY2tzCi8vIHN5bmNocm9ub3VzbHkgaW4gdGhlIGtvZmZpIGRpYWxvZyBjYWxsLCBzbyBpdCBuZXZlciBoaXRzIHRoaXMpLgpzZW5kKHsga2luZDogJ3Nob3dpbmcnLCB0aHJlYWRJZDogMCB9KQoKY29uc3QgdmJzUGF0aCA9IHJlcXVpcmUoJ25vZGU6cGF0aCcpLmpvaW4ocmVxdWlyZSgnbm9kZTpvcycpLnRtcGRpcigpLCAnZHNoLXBpY2tlci0nICsgcHJvY2Vzcy5waWQgKyAnLnZicycpCnJlcXVpcmUoJ25vZGU6ZnMnKS53cml0ZUZpbGVTeW5jKHZic1BhdGgsICdcdWZlZmYnICsgVkJTX1NDUklQVCwgJ3V0ZjE2bGUnKQpjb25zdCBjaGlsZCA9IHNwYXduKCdjc2NyaXB0LmV4ZScsIFsnLy9ub2xvZ28nLCB2YnNQYXRoXSwgewogIHdpbmRvd3NIaWRlOiB0cnVlLAogIHN0ZGlvOiBbJ2lnbm9yZScsICdwaXBlJywgJ3BpcGUnXSwKfSkKLy8gQSBkaWFsb2cgdGhhdCBhcHBlYXJzIHdpdGhvdXQga2V5Ym9hcmQgZm9jdXMgdHVybnMgQWx0K0Y0IGludG8gdGhlCi8vIGRlc2t0b3AncyBzaHV0ZG93biBtZW51IOKAlCBmb3JjZS1hY3RpdmF0ZSB0aGUgZGlhbG9nIGEgbW9tZW50IGFmdGVyIGl0Ci8vIGFwcGVhcnMgc28gY2xvc2Ugc2hvcnRjdXRzIGxhbmQgb24gdGhlIGRpYWxvZyBpdHNlbGYuCi8vIFJlcGVhdGVkbHkgZm9yY2UgdGhlIGRpYWxvZyB0byB0aGUgZm9yZWdyb3VuZCDigJQgYSBkaWFsb2cgdGhhdCBhcHBlYXJzCi8vIHdpdGhvdXQga2V5Ym9hcmQgZm9jdXMgdHVybnMgQWx0K0Y0IGludG8gdGhlIGRlc2t0b3AncyBzaHV0ZG93biBtZW51Lgpmb3IgKGNvbnN0IGRlbGF5IG9mIFs4MCwgMjAwLCA0MDAsIDcwMF0pIHsKICBzZXRUaW1lb3V0KCgpID0+IHsKICAgIGNvbnN0IGFjdCA9IHNwYXduKCdwb3dlcnNoZWxsLmV4ZScsIFsnLU5vUHJvZmlsZScsICctQ29tbWFuZCcsICIkd3NoZWxsID0gTmV3LU9iamVjdCAtQ29tT2JqZWN0IFdTY3JpcHQuU2hlbGw7ICR3c2hlbGwuQXBwQWN0aXZhdGUoJ+ivt+mAieaLqeW3peS9nOWMuuebruW9lScpIl0sIHsgd2luZG93c0hpZGU6IHRydWUsIHN0ZGlvOiAnaWdub3JlJyB9KQogICAgYWN0LnVucmVmKCkKICB9LCBkZWxheSkKfQpjaGlsZC5vbignY2xvc2UnLCAoKSA9PiB7IHRyeSB7IHJlcXVpcmUoJ25vZGU6ZnMnKS51bmxpbmtTeW5jKHZic1BhdGgpIH0gY2F0Y2ggeyB9IH0pCgpsZXQgc3Rkb3V0ID0gJycKbGV0IHN0ZGVyciA9ICcnCmNoaWxkLnN0ZG91dC5vbignZGF0YScsIChkKSA9PiB7IHN0ZG91dCArPSBTdHJpbmcoZCkgfSkKY2hpbGQuc3RkZXJyLm9uKCdkYXRhJywgKGQpID0+IHsgc3RkZXJyICs9IFN0cmluZyhkKSB9KQpjaGlsZC5vbignZXJyb3InLCAoZXJyb3IpID0+IHsKICBwb3N0KHsga2luZDogJ2Vycm9yJywgbWVzc2FnZTogU3RyaW5nKGVycm9yICYmIGVycm9yLm1lc3NhZ2UgPyBlcnJvci5tZXNzYWdlIDogZXJyb3IpIH0pCn0pCmNoaWxkLm9uKCdjbG9zZScsIChjb2RlKSA9PiB7CiAgY29uc3QgbGluZSA9IHN0ZG91dC50cmltKCkuc3BsaXQoL1xyP1xuLylbMF0gfHwgJycKICBsZXQgcGF0aCA9IG51bGwKICBpZiAobGluZS5sZW5ndGggPiAwKSB7CiAgICB0cnkgewogICAgICBjb25zdCBjb2RlcyA9IGxpbmUuc3BsaXQoJyAnKS5maWx0ZXIoQm9vbGVhbikubWFwKChuKSA9PiBOdW1iZXIucGFyc2VJbnQobiwgMTApKQogICAgICBpZiAoY29kZXMubGVuZ3RoID4gMCkgcGF0aCA9IFN0cmluZy5mcm9tQ2hhckNvZGUoLi4uY29kZXMpCiAgICB9IGNhdGNoIHsKICAgICAgcGF0aCA9IGxpbmUKICAgIH0KICB9CiAgaWYgKGNvZGUgPT09IDAgJiYgcGF0aCAhPT0gbnVsbCkgewogICAgcG9zdCh7IGtpbmQ6ICdkb25lJywgcGF0aCB9KQogIH0gZWxzZSBpZiAoY29kZSA9PT0gMCkgewogICAgcG9zdCh7IGtpbmQ6ICdkb25lJywgcGF0aDogbnVsbCB9KQogIH0gZWxzZSB7CiAgICBwb3N0KHsga2luZDogJ2Vycm9yJywgbWVzc2FnZTogJ2ZvbGRlciBkaWFsb2cgZmFpbGVkIChleGl0ICcgKyBjb2RlICsgJyk6ICcgKyBzdGRlcnIuc2xpY2UoMCwgMjAwKSB9KQogIH0KfSkK";
++const PICKER_WORKER_B64 = "LyoqCiAqIERpcmVjdG9yeS1waWNrZXIgd29ya2VyIChDSlMpLgogKgogKiBJbnN0ZWFkIG9mIHNwYXduaW5nIGl0cyBvd24gZGlhbG9nIHByb2Nlc3MgKHdoaWNoIFdpbmRvd3MgcmVmdXNlcyB0byBicmluZwogKiB0byB0aGUgZm9yZWdyb3VuZCB3aGlsZSB0aGUgR1VJIHdpbmRvdyBpcyBhY3RpdmUpLCB0aGlzIHdvcmtlciBhc2tzIHRoZQogKiBsYXVuY2hlcidzIGxvb3BiYWNrIEhUVFAgc2VydmljZSB0byBvcGVuIEVsZWN0cm9uJ3MgbmF0aXZlIGRpcmVjdG9yeQogKiBkaWFsb2cg4oCUIG1vZGFsLCBmb2N1c2VkLCBhbmQgdmlzaWJsZSBpbiBib3RoIHRoZSBHVUkgYW5kIHRoZSB3ZWIgY2xpZW50LgogKiBQcm90b2NvbCBtYXRjaGVzIHRoZSBvZmZpY2lhbCBkcml2ZXIgKHNob3dpbmcvZG9uZS9lcnJvciBvdmVyIElQQykuCiAqLwondXNlIHN0cmljdCcKCmNvbnN0IHRpdGxlID0gcHJvY2Vzcy5lbnYuRFNIX0RJQUxPR19USVRMRSA/PyAnJwppZiAodGl0bGUgPT09ICcnKSB0aHJvdyBuZXcgRXJyb3IoJ3dpbjMyLWRpYWxvZy13b3JrZXI6IERTSF9ESUFMT0dfVElUTEUgaXMgcmVxdWlyZWQnKQppZiAocHJvY2Vzcy5zZW5kID09PSB1bmRlZmluZWQpIHRocm93IG5ldyBFcnJvcignd2luMzItZGlhbG9nLXdvcmtlciBtdXN0IHJ1biBhcyBhIGNoaWxkIHByb2Nlc3Mgd2l0aCBhbiBJUEMgY2hhbm5lbCcpCmNvbnN0IHNlbmQgPSBwcm9jZXNzLnNlbmQuYmluZChwcm9jZXNzKQoKY29uc3QgcG9zdCA9IChtZXNzYWdlKSA9PiB7CiAgc2VuZChtZXNzYWdlLCAoKSA9PiB7IGlmIChwcm9jZXNzLmNvbm5lY3RlZCkgcHJvY2Vzcy5kaXNjb25uZWN0KCkgfSkKfQpwcm9jZXNzLm9uKCdkaXNjb25uZWN0JywgKCkgPT4gcHJvY2Vzcy5leGl0KDApKQoKLy8gUGxhaW4gc2VuZCB3aXRob3V0IHRoZSBkaXNjb25uZWN0IGNhbGxiYWNrOiBkaXNjb25uZWN0aW5nIGhlcmUgd291bGQgZHJhaW4KLy8gdGhlIGV2ZW50IGxvb3AgYW5kIGV4aXQgdGhpcyB3b3JrZXIgYmVmb3JlIHRoZSByZXF1ZXN0IHNldHRsZXMuCnNlbmQoeyBraW5kOiAnc2hvd2luZycsIHRocmVhZElkOiAwIH0pCgpjb25zdCBwb3J0ID0gTnVtYmVyKHByb2Nlc3MuZW52LkRTSF9HVUlfUElDS0VSX1BPUlQgfHwgMCkKaWYgKHBvcnQgPD0gMCkgewogIHBvc3QoeyBraW5kOiAnZXJyb3InLCBtZXNzYWdlOiAncGlja2VyIHBvcnQgbWlzc2luZyAoRFNIX0dVSV9QSUNLRVJfUE9SVCknIH0pCn0gZWxzZSB7CiAgZmV0Y2goJ2h0dHA6Ly8xMjcuMC4wLjE6JyArIHBvcnQgKyAnL3BpY2stZGlyZWN0b3J5JywgewogICAgbWV0aG9kOiAnUE9TVCcsCiAgICBoZWFkZXJzOiB7ICdDb250ZW50LVR5cGUnOiAnYXBwbGljYXRpb24vanNvbicgfSwKICAgIGJvZHk6IEpTT04uc3RyaW5naWZ5KHsgdGl0bGUgfSksCiAgfSkKICAgIC50aGVuKChyZXNwb25zZSkgPT4gcmVzcG9uc2UuanNvbigpKQogICAgLnRoZW4oKGRhdGEpID0+IHsKICAgICAgaWYgKGRhdGEgIT09IG51bGwgJiYgdHlwZW9mIGRhdGEgPT09ICdvYmplY3QnICYmIGRhdGEuY2FuY2VsbGVkID09PSB0cnVlKSB7CiAgICAgICAgcG9zdCh7IGtpbmQ6ICdkb25lJywgcGF0aDogbnVsbCB9KQogICAgICB9IGVsc2UgaWYgKGRhdGEgIT09IG51bGwgJiYgdHlwZW9mIGRhdGEgPT09ICdvYmplY3QnICYmIHR5cGVvZiBkYXRhLnBhdGggPT09ICdzdHJpbmcnKSB7CiAgICAgICAgcG9zdCh7IGtpbmQ6ICdkb25lJywgcGF0aDogZGF0YS5wYXRoIH0pCiAgICAgIH0gZWxzZSB7CiAgICAgICAgcG9zdCh7IGtpbmQ6ICdlcnJvcicsIG1lc3NhZ2U6ICdwaWNrZXIgcmV0dXJuZWQgYW4gaW52YWxpZCByZXN1bHQnIH0pCiAgICAgIH0KICAgIH0pCiAgICAuY2F0Y2goKGVycm9yKSA9PiB7CiAgICAgIHBvc3QoeyBraW5kOiAnZXJyb3InLCBtZXNzYWdlOiAncGlja2VyIHJlcXVlc3QgZmFpbGVkOiAnICsgU3RyaW5nKGVycm9yICYmIGVycm9yLm1lc3NhZ2UgPyBlcnJvci5tZXNzYWdlIDogZXJyb3IpIH0pCiAgICB9KQp9Cg==";
 +function healProfileDirectoryPicker() {
 +	try {
 +		const target = join(app.getPath("home"), ".dsh", "profiles", "node_modules", "@deepseek-ai", "dsh-host-directory-picker-native", "lib", "worker.cjs");
@@ -584,7 +642,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  /** Install native edit/view/help menus without exposing privileged renderer IPC. */
  function installMenu() {
  	const template = [
-@@ -1168,11 +1329,18 @@ else {
+@@ -1168,11 +1380,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
@@ -605,7 +663,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
-@@ -1183,6 +1351,7 @@ else {
+@@ -1183,6 +1402,7 @@ else {
  		});
  	});
  	app.whenReady().then(async () => {
@@ -613,10 +671,11 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const logsDirectory = app.getPath("logs");
  		mkdirSync(logsDirectory, { recursive: true });
  		logPath = join(logsDirectory, "desktop.log");
-@@ -1194,6 +1363,18 @@ else {
+@@ -1194,6 +1414,19 @@ else {
  		installMenu();
  		installUpdateSchedule();
  		notifyUpdateResult();
++		startPickerHttpServer();
 +		// Surface a previously staged update's restart prompt right away.
 +		try {
 +			const stagedManifest = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
