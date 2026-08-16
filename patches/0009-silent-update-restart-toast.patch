@@ -6,7 +6,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
   * to disable the automatic check (manual check via the Help menu still works).
   */
 -const DSH_GUI_VERSION = "1.0.8";
-+const DSH_GUI_VERSION = "1.0.10";
++const DSH_GUI_VERSION = "1.0.11";
  const UPDATE_REPO = "xuboboo/dsh-gui";
  const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
  const UPDATE_CHECK_DELAY_MS = 8_000;
@@ -89,12 +89,12 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +			cancelId: 0,
  		});
 -		choice = answer;
--	}
+ 	}
 -	if (choice === 1) {
 -		state.ignoredVersion = remote;
 -		writeUpdateState(state);
 -		return false;
- 	}
+-	}
 -	if (choice !== 0) return false;
 -	void downloadAndInstall(remote, asset);
 +	void downloadAndInstall(remote, asset, force);
@@ -456,12 +456,12 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +				cancelId: 0,
  			});
 -			restart = restartAnswer;
- 		}
+-		}
 -		if (restart !== 0) {
 -			log("updater", "user chose to restart later; update will apply on exit");
 -			closeProgressWindow();
 -			return;
--		}
+ 		}
 -		scheduleApplyOnExit(version, true);
 +	} finally {
 +		updateInFlight = false;
@@ -557,7 +557,33 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		}
  	} catch (error) {
  		log("updater", `update result notice failed: ${String(error)}`);
-@@ -1168,11 +1309,18 @@ else {
+@@ -1060,6 +1201,25 @@ function installUpdateSchedule() {
+ 	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
+ }
+ //#endregion
++/**
++ * The runtime loads @deepseek-ai packages from the profile's node_modules,
++ * not from the asar. Official rc.5 ships a crashing directory-picker worker
++ * there (readUtf16 over-reads the heap and faults natively on selection),
++ * so copy our fixed worker.cjs over the profile copy at every startup.
++ */
++function healProfileDirectoryPicker() {
++	try {
++		const profileRoot = join(app.getPath("home"), ".dsh", "profiles", "node_modules");
++		const target = join(profileRoot, "@deepseek-ai", "dsh-host-directory-picker-native", "lib", "worker.cjs");
++		if (!existsSync(target)) return;
++		const source = fileURLToPath(new URL("../../node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs", import.meta.url));
++		if (!existsSync(source)) return;
++		copyFileSync(source, target);
++		log("desktop", "profile directory-picker worker healed");
++	} catch (error) {
++		log("desktop", `profile heal skipped: ${String(error)}`);
++	}
++}
+ /** Install native edit/view/help menus without exposing privileged renderer IPC. */
+ function installMenu() {
+ 	const template = [
+@@ -1168,11 +1328,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
@@ -578,7 +604,15 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
-@@ -1194,6 +1342,18 @@ else {
+@@ -1183,6 +1350,7 @@ else {
+ 		});
+ 	});
+ 	app.whenReady().then(async () => {
++		healProfileDirectoryPicker();
+ 		const logsDirectory = app.getPath("logs");
+ 		mkdirSync(logsDirectory, { recursive: true });
+ 		logPath = join(logsDirectory, "desktop.log");
+@@ -1194,6 +1362,18 @@ else {
  		installMenu();
  		installUpdateSchedule();
  		notifyUpdateResult();

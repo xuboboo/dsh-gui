@@ -1,22 +1,24 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..c99bc7e
+index 0000000..269a3ae
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,211 @@
 +/**
 + * CJS worker entry for the Win32 folder dialog.
 + *
 + * The official rc.5 package declares lib/worker.cjs in package.json but its
-+ * build never emitted the file, so host.pickDirectory always failed with
-+ * "win32 folder dialog worker exited before reporting a result". This is a
-+ * manual CJS build of the three official sources:
-+ *   - win32-dialog-worker.ts  (process entry + IPC protocol)
++ * build never emitted the file, and the npm-published copy crashes natively
++ * in readUtf16 (koffi.view over-reads the heap; koffi.decode('str16')
++ * re-dereferences the pointer). This is a manual CJS build of the three
++ * official sources with a safe string walker:
++ *   - win32-dialog-worker.ts   (process entry + IPC protocol)
 + *   - win32-dialog-bindings.ts (koffi COM surface)
 + *   - win32-dialog-logic.ts    (IFileOpenDialog sequencing)
 + * Spawned by dsh-host-directory-picker-native's win32-dialog-host.ts with
-+ * ELECTRON_RUN_AS_NODE (inherited), so it runs under plain node semantics
-+ * with asar-aware fs.
++ * ELECTRON_RUN_AS_NODE (inherited), so it runs under plain node semantics.
++ * It is launched from app.asar.unpacked (Electron cannot use an asar path
++ * as a process entry point), so koffi is resolved inside the asar by path.
 + */
 +'use strict'
 +
@@ -49,10 +51,26 @@ index 0000000..c99bc7e
 +const SLOT_GET_DISPLAY_NAME = 5
 +
 +function readUtf16(koffi, address) {
-+  const bytes = Buffer.from(koffi.view(address, 32768))
-+  let end = 0
-+  while (end + 1 < bytes.length && bytes[end] !== 0) end += 2
-+  return bytes.toString('utf16le', 0, end)
++  // The _Out_ void ** value is the CoTaskMemAlloc'd LPWSTR itself. Neither
++  // koffi.decode(addr, 'str16') (koffi re-dereferences it as a pointer) nor
++  // koffi.view(addr, 32768) (over-reads the heap allocation, native fault)
++  // is safe — walk the string one 2-byte unit at a time so every view stays
++  // inside the allocation. Official rc.5 crashed here on every selection.
++  if (!address) return ''
++  let out = ''
++  let offset = 0
++  try {
++    while (offset < 32768) {
++      const ab = koffi.view(Number(address) + offset, 2)
++      const code = Buffer.from(ab).readUInt16LE(0)
++      if (code === 0) break
++      out += String.fromCharCode(code)
++      offset += 2
++    }
++    return out
++  } catch {
++    return out
++  }
 +}
 +
 +function guidBytes(text) {
@@ -69,7 +87,18 @@ index 0000000..c99bc7e
 +const IID_IFILE_OPEN_DIALOG = guidBytes('d57c7288-d4ad-4768-be02-9d969532d960')
 +
 +async function loadWin32DialogBindings() {
-+  const koffi = (await import('koffi')).default
++  // This worker is launched from app.asar.unpacked (Electron cannot use an
++  // asar path as a process entry point), so resolve the koffi package inside
++  // the asar explicitly; in a plain source tree both paths coincide.
++  const path = require('node:path')
++  const { pathToFileURL } = require('node:url')
++  let pkgRoot = path.join(__dirname, '..', '..', '..')
++  if (pkgRoot.includes('app.asar.unpacked')) {
++    pkgRoot = pkgRoot.replace(/[\\/]app\.asar\.unpacked[\\/]/, '\\app.asar\\')
++  }
++  const koffiModule = await import(pathToFileURL(path.join(pkgRoot, 'koffi', 'index.js')).href)
++  const koffi = koffiModule.default
++
 +  const ole32 = koffi.load('ole32.dll')
 +  const user32 = koffi.load('user32.dll')
 +  const kernel32 = koffi.load('kernel32.dll')
@@ -125,20 +154,20 @@ index 0000000..c99bc7e
 +          const gotName = method(item, SLOT_GET_DISPLAY_NAME, protoGetDisplayName)(SIGDN_FILESYSPATH, nameOut)
 +          if (gotName < 0) return { hr: gotName }
 +          const p = readUtf16(koffi, nameOut[0])
-+          coTaskMemFree(nameOut[0])
++          try { coTaskMemFree(nameOut[0]) } catch { }
 +          return { hr: gotName, path: p }
 +        } finally {
-+          method(item, SLOT_RELEASE, protoRelease)()
++          try { method(item, SLOT_RELEASE, protoRelease)() } catch { }
 +        }
 +      },
-+      release: () => { method(dialog, SLOT_RELEASE, protoRelease)() },
++      release: () => { try { method(dialog, SLOT_RELEASE, protoRelease)() } catch { } },
 +    }
 +  }
 +
 +  return {
 +    setThreadDpiAwareness,
 +    coInitializeSta: () => coInitializeEx(null, COINIT_APARTMENTTHREADED),
-+    coUninitialize: () => { coUninitialize() },
++    coUninitialize: () => { try { coUninitialize() } catch { } },
 +    currentThreadId: () => getCurrentThreadId(),
 +    createFolderDialog,
 +  }
