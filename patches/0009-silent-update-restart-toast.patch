@@ -9,16 +9,67 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  import { fileURLToPath } from "node:url";
  import { BrowserWindow, Menu, app, dialog, Notification, session, shell } from "electron";
  //#region src/runtime.ts
-@@ -392,7 +393,7 @@ async function restartHarness() {
+@@ -274,6 +275,34 @@ async function stopHarness() {
+ 		});
+ 	});
+ }
++/** Kill any leftover process still listening on the desktop port (a runtime
++ * from a crashed or force-exited session would block the next start). */
++function cleanupStalePort() {
++	return new Promise((resolve) => {
++		try {
++			const child = spawn("netstat", ["-ano"], { windowsHide: true });
++			let out = "";
++			child.stdout.on("data", (d) => { out += String(d); });
++			child.on("error", () => resolve());
++			child.on("close", () => {
++				for (const line of out.split(/\r?\n/)) {
++					const match = line.match(/127\.0\.0\.1:3081\s+.*\s+LISTENING\s+(\d+)/);
++					if (match === null) continue;
++					const pid = match[1];
++					if (pid === String(process.pid)) break;
++					log("desktop", "cleaning stale listener on 3081 (pid " + pid + ")");
++					const kill = spawn("taskkill", ["/pid", pid, "/t", "/f"], { windowsHide: true });
++					kill.on("error", () => resolve());
++					kill.on("close", () => resolve());
++					return;
++				}
++				resolve();
++			});
++		} catch {
++			resolve();
++		}
++	});
++}
+ /** Start the Web profile and resolve only after its Loader readiness line. */
+ function startHarness() {
+ 	if (startupPromise !== void 0) return startupPromise;
+@@ -376,7 +405,14 @@ async function restartHarness() {
+ 		} catch (error) {
+ 			const detail = error instanceof Error ? error.message : String(error);
+ 			log("desktop", `restart failed: ${detail}`);
+-			await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail));
++			await cleanupStalePort();
++			try {
++				await loadWindow(window, await startHarness());
++			} catch (error2) {
++				const detail2 = error2 instanceof Error ? error2.message : String(error2);
++				log("desktop", `restart retry failed: ${detail2}`);
++				await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail2));
++			}
+ 		}
+ 	} finally {
+ 		restarting = false;
+@@ -392,7 +428,7 @@ async function restartHarness() {
   * All user interaction is native dialogs; set DSH_GUI_DISABLE_AUTO_UPDATE=1
   * to disable the automatic check (manual check via the Help menu still works).
   */
 -const DSH_GUI_VERSION = "1.0.8";
-+const DSH_GUI_VERSION = "1.0.14";
++const DSH_GUI_VERSION = "1.0.15";
  const UPDATE_REPO = "xuboboo/dsh-gui";
  const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
  const UPDATE_CHECK_DELAY_MS = 8_000;
-@@ -436,7 +437,18 @@ function writeUpdateState(state) {
+@@ -436,7 +472,18 @@ function writeUpdateState(state) {
  }
  /** Whether an update is currently staged and applied by the helper script. */
  function isUpdateStaged() {
@@ -38,7 +89,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  }
  /** Fetch helper with timeout. */
  async function fetchJson(url, timeoutMs = 15_000) {
-@@ -533,6 +545,10 @@ async function checkForUpdate(force = false) {
+@@ -533,6 +580,10 @@ async function checkForUpdate(force = false) {
  	if (!force && state.ignoredVersion === remote) return false;
  	const asset = asarUpdateAsset(release, remote);
  	if (asset === undefined) {
@@ -49,7 +100,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const answer = await showBrandDialog({
  			title: "发现新版本",
  			message: "dsh-gui 新版本 v" + remote + "（当前 v" + DSH_GUI_VERSION + "）",
-@@ -548,30 +564,38 @@ async function checkForUpdate(force = false) {
+@@ -548,30 +599,38 @@ async function checkForUpdate(force = false) {
  		}
  		return false;
  	}
@@ -109,7 +160,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	return true;
  }
  
-@@ -599,47 +623,73 @@ function showBrandDialog(opts) {
+@@ -599,47 +658,73 @@ function showBrandDialog(opts) {
  		noLink: true,
  	}).then(({ response }) => response);
  }
@@ -223,7 +274,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  }
  /**
   * Direct HTTPS download with manual redirect following (up to 5 hops) and
-@@ -697,7 +747,7 @@ async function downloadStream(url, destPath, onProgress) {
+@@ -697,7 +782,7 @@ async function downloadStream(url, destPath, onProgress) {
  			let received = 0;
  			response.on("data", (chunk) => {
  				received += chunk.length;
@@ -232,7 +283,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			});
  			response.pipe(file);
  			file.on("finish", () => { file.close(() => resolve(received)); });
-@@ -728,7 +778,7 @@ function systemProxyUrl() {
+@@ -728,7 +813,7 @@ function systemProxyUrl() {
  /** Download with curl.exe (direct or via proxy). Resolves the file size. */
  function downloadViaCurl(url, dest, proxy, onProgress, total) {
  	return new Promise((resolve, reject) => {
@@ -241,7 +292,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		if (proxy !== undefined && proxy !== "") args.push("--proxy", proxy);
  		args.push(url);
  		const child = spawn("curl.exe", args, {
-@@ -785,13 +835,87 @@ async function assetDownloadUrl(asset) {
+@@ -785,13 +870,87 @@ async function assetDownloadUrl(asset) {
  	}
  	return undefined;
  }
@@ -314,14 +365,14 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +		const chunks = [];
 +		for (let i = 0; i < ranges.length; i++) {
 +			chunks.push(readFileSync(join(chunkDir, i + ".part")));
-+		}
+ 		}
 +		writeFileSync(destFile, Buffer.concat(chunks));
 +		if (statSync(destFile).size !== total) throw new Error("assembled size mismatch");
 +		return total;
 +	} finally {
 +		for (let i = 0; i < ranges.length; i++) {
 +			try { unlinkSync(join(chunkDir, i + ".part")); } catch { }
- 		}
++		}
 +	}
 +}
 +/** Download, verify, and stage the update package; then apply on exit. */
@@ -334,7 +385,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		// Multi-channel download with live progress: https stream (direct) →
  		// curl direct → curl via system proxy → fetch (system proxy). Every
  		// channel fails fast (20s connect timeout) so the user always gets
-@@ -802,14 +926,24 @@ async function downloadAndInstall(version, asset) {
+@@ -802,14 +961,24 @@ async function downloadAndInstall(version, asset) {
  		let downloadedSize = 0;
  		let lastError = null;
  		const cdnUrl = await assetDownloadUrl(asset);
@@ -364,7 +415,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `stream direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -820,10 +954,7 @@ async function downloadAndInstall(version, asset) {
+@@ -820,10 +989,7 @@ async function downloadAndInstall(version, asset) {
  			// channel 2: curl direct
  			if (downloadedSize === 0) {
  				try {
@@ -376,7 +427,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					log("updater", `curl direct OK (${downloadedSize} bytes)`);
  				} catch (error) {
  					lastError = error;
-@@ -834,12 +965,9 @@ async function downloadAndInstall(version, asset) {
+@@ -834,12 +1000,9 @@ async function downloadAndInstall(version, asset) {
  			// channel 3: curl via system proxy
  			if (downloadedSize === 0) {
  				try {
@@ -391,7 +442,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						log("updater", `curl proxy OK (${downloadedSize} bytes, proxy ${proxy})`);
  					}
  				} catch (error) {
-@@ -854,7 +982,6 @@ async function downloadAndInstall(version, asset) {
+@@ -854,7 +1017,6 @@ async function downloadAndInstall(version, asset) {
  			try {
  				const sources = cdnUrl !== undefined ? [cdnUrl, asset.browser_download_url] : [asset.browser_download_url];
  				for (const source of sources) {
@@ -399,7 +450,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  					const controller = new AbortController();
  					const timer = setTimeout(() => controller.abort(), 3 * 60_000);
  					let response;
-@@ -874,8 +1001,7 @@ async function downloadAndInstall(version, asset) {
+@@ -874,8 +1036,7 @@ async function downloadAndInstall(version, asset) {
  								if (done) break;
  								chunks.push(Buffer.from(value));
  								received += value.length;
@@ -409,7 +460,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  						} else {
  							chunks.push(Buffer.from(await response.arrayBuffer()));
  						}
-@@ -892,7 +1018,6 @@ async function downloadAndInstall(version, asset) {
+@@ -892,7 +1053,6 @@ async function downloadAndInstall(version, asset) {
  			}
  		}
  		if (downloadedSize === 0) throw new Error("下载失败：" + String(lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误")));
@@ -417,7 +468,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const buffer = readFileSync(downloadFile);
  		try { unlinkSync(downloadFile); } catch { }
  
-@@ -928,49 +1053,58 @@ async function downloadAndInstall(version, asset) {
+@@ -928,49 +1088,60 @@ async function downloadAndInstall(version, asset) {
  		// Stage the update.
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
  		mkdirSync(stageDir, { recursive: true });
@@ -464,13 +515,12 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +				cancelId: 0,
  			});
 -			restart = restartAnswer;
- 		}
+-		}
 -		if (restart !== 0) {
 -			log("updater", "user chose to restart later; update will apply on exit");
 -			closeProgressWindow();
 -			return;
--		}
--		scheduleApplyOnExit(version, true);
+ 		}
 +	} finally {
 +		updateInFlight = false;
 +	}
@@ -489,8 +539,14 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +		log("updater", "payload applied in-place");
 +		writeFileSync(join(stageDir, "applied.txt"), version + "|" + new Date().toISOString(), "utf8");
 +		app.relaunch();
++		// quit() (not exit()): before-quit stops the child runtime first, so
++		// the relaunched instance can bind port 3081 instead of failing.
++		app.quit();
++	} catch (error) {
++		log("updater", `in-place apply failed: ${String(error)}`);
+ 		scheduleApplyOnExit(version, true);
  		app.exit(0);
- 	} catch (error) {
+-	} catch (error) {
 -		log("updater", `update failed: ${String(error)}`);
 -		closeProgressWindow();
 -		await showBrandDialog({
@@ -501,13 +557,10 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 -			primaryIndex: 0,
 -			cancelId: 0,
 -		});
-+		log("updater", `in-place apply failed: ${String(error)}`);
-+		scheduleApplyOnExit(version, true);
-+		app.exit(0);
  	}
  }
  /**
-@@ -980,7 +1114,9 @@ async function downloadAndInstall(version, asset) {
+@@ -980,7 +1151,9 @@ async function downloadAndInstall(version, asset) {
  function scheduleApplyOnExit(version, relaunch = false) {
  	try {
  		const stageDir = join(app.getPath("userData"), "dsh-gui-update");
@@ -518,7 +571,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const exePath = process.execPath;
  		const scriptPath = join(stageDir, "apply-update.ps1");
  		const script = [
-@@ -992,14 +1128,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -992,14 +1165,14 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"Start-Sleep -Seconds 3",
  			"$asar = '" + asarTarget + "'",
  			"$stageDir = '" + stageDir + "'",
@@ -535,7 +588,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  			"} catch {",
  			"  L ('APPLY_ERR: ' + $_.Exception.Message)",
  			"  try { Copy-Item -LiteralPath $bak -Destination $asar -Force -ErrorAction Stop; L 'ROLLED_BACK' } catch { L ('ROLLBACK_ERR: ' + $_.Exception.Message) }",
-@@ -1007,7 +1143,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
+@@ -1007,7 +1180,10 @@ function scheduleApplyOnExit(version, relaunch = false) {
  			"if ($relaunch) { Start-Process -FilePath '" + exePath + "' -WorkingDirectory '" + dirname(exePath) + "' }",
  			"L 'DONE'",
  		].join("\r\n");
@@ -547,7 +600,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
  		if (relaunch) args.push("-relaunch");
  		const child = spawn("powershell", args, {
-@@ -1043,13 +1182,15 @@ function notifyUpdateResult() {
+@@ -1043,13 +1219,15 @@ function notifyUpdateResult() {
  					cancelId: 0,
  				});
  			}
@@ -568,7 +621,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  	} catch (error) {
  		log("updater", `update result notice failed: ${String(error)}`);
  	}
-@@ -1060,6 +1201,78 @@ function installUpdateSchedule() {
+@@ -1060,6 +1238,78 @@ function installUpdateSchedule() {
  	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
  }
  //#endregion
@@ -647,7 +700,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  /** Install native edit/view/help menus without exposing privileged renderer IPC. */
  function installMenu() {
  	const template = [
-@@ -1168,11 +1381,18 @@ else {
+@@ -1168,11 +1418,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
@@ -669,7 +722,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
-@@ -1183,6 +1403,7 @@ else {
+@@ -1183,6 +1440,7 @@ else {
  		});
  	});
  	app.whenReady().then(async () => {
@@ -677,7 +730,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const logsDirectory = app.getPath("logs");
  		mkdirSync(logsDirectory, { recursive: true });
  		logPath = join(logsDirectory, "desktop.log");
-@@ -1194,6 +1415,19 @@ else {
+@@ -1194,13 +1452,35 @@ else {
  		installMenu();
  		installUpdateSchedule();
  		notifyUpdateResult();
@@ -697,3 +750,20 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const window = createWindow();
  		try {
  			await loadWindow(window, await startHarness());
+ 		} catch (error) {
+ 			const detail = error instanceof Error ? error.message : String(error);
+ 			log("desktop", `startup failed: ${detail}`);
+-			await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail));
++			// A leftover runtime from a crashed/forced-exit session may still
++			// hold port 3081: clear it and retry once before giving up.
++			await cleanupStalePort();
++			try {
++				await loadWindow(window, await startHarness());
++			} catch (error2) {
++				const detail2 = error2 instanceof Error ? error2.message : String(error2);
++				log("desktop", `startup retry failed: ${detail2}`);
++				await loadWindow(window, statusPage("DeepSeek Harness 启动失败", `请检查端口、运行日志和 DSH_HOME 配置。日志：${logPath}`, detail2));
++			}
+ 		}
+ 	});
+ }
