@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..f2247f4
+index 0000000..bfeb0a6
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,75 @@
 +/**
 + * Directory-picker worker (CJS).
 + *
@@ -38,7 +38,8 @@ index 0000000..f2247f4
 +  '$f.Description = $env:DSH_DIALOG_TITLE',
 +  '$f.ShowNewFolderButton = $true',
 +  'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {',
-+  '  Write-Output $f.SelectedPath',
++  '  $bytes = [Text.Encoding]::UTF8.GetBytes($f.SelectedPath)',
++  '  Write-Output ([Convert]::ToBase64String($bytes))',
 +  '}',
 +].join("\r\n")
 +
@@ -60,8 +61,17 @@ index 0000000..f2247f4
 +  post({ kind: 'error', message: String(error && error.message ? error.message : error) })
 +})
 +child.on('close', (code) => {
-+  const path = stdout.trim().split(/\r?\n/)[0] || null
-+  if (code === 0 && path !== null && path.length > 0) {
++  const line = stdout.trim().split(/\r?\n/)[0] || ''
++  let path = null
++  if (line.length > 0) {
++    try {
++      path = Buffer.from(line, 'base64').toString('utf8')
++      if (path === '') path = null
++    } catch {
++      path = line
++    }
++  }
++  if (code === 0 && path !== null) {
 +    post({ kind: 'done', path })
 +  } else if (code === 0) {
 +    post({ kind: 'done', path: null })
