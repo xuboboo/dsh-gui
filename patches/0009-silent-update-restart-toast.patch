@@ -565,7 +565,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		}
  	} catch (error) {
  		log("updater", `update result notice failed: ${String(error)}`);
-@@ -1060,6 +1202,76 @@ function installUpdateSchedule() {
+@@ -1060,6 +1202,78 @@ function installUpdateSchedule() {
  	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
  }
  //#endregion
@@ -609,11 +609,13 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 +				}
 +			});
 +		});
-+		server.listen(0, "127.0.0.1", () => {
-+			const address = server.address();
-+			const port = typeof address === "object" && address !== null ? address.port : 0;
-+			process.env.DSH_GUI_PICKER_PORT = String(port);
-+			log("desktop", "picker http service on 127.0.0.1:" + String(port));
++		// Fixed loopback port (no env race with the runtime spawn). The picker
++		// worker requests 127.0.0.1:3082 directly.
++		server.listen(3082, "127.0.0.1", () => {
++			log("desktop", "picker http service on 127.0.0.1:3082");
++		});
++		server.on("error", (error) => {
++			log("desktop", "picker http service failed: " + String(error));
 +		});
 +	} catch (error) {
 +		log("desktop", "picker http service failed: " + String(error));
@@ -627,7 +629,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
 + * PowerShell FolderBrowserDialog with Base64 output, immune to koffi and to
 + * PS 5.1 OEM stdout encoding) and rewrites the profile copy at every startup.
 + */
-+const PICKER_WORKER_B64 = "LyoqCiAqIERpcmVjdG9yeS1waWNrZXIgd29ya2VyIChDSlMpLgogKgogKiBJbnN0ZWFkIG9mIHNwYXduaW5nIGl0cyBvd24gZGlhbG9nIHByb2Nlc3MgKHdoaWNoIFdpbmRvd3MgcmVmdXNlcyB0byBicmluZwogKiB0byB0aGUgZm9yZWdyb3VuZCB3aGlsZSB0aGUgR1VJIHdpbmRvdyBpcyBhY3RpdmUpLCB0aGlzIHdvcmtlciBhc2tzIHRoZQogKiBsYXVuY2hlcidzIGxvb3BiYWNrIEhUVFAgc2VydmljZSB0byBvcGVuIEVsZWN0cm9uJ3MgbmF0aXZlIGRpcmVjdG9yeQogKiBkaWFsb2cg4oCUIG1vZGFsLCBmb2N1c2VkLCBhbmQgdmlzaWJsZSBpbiBib3RoIHRoZSBHVUkgYW5kIHRoZSB3ZWIgY2xpZW50LgogKiBQcm90b2NvbCBtYXRjaGVzIHRoZSBvZmZpY2lhbCBkcml2ZXIgKHNob3dpbmcvZG9uZS9lcnJvciBvdmVyIElQQykuCiAqLwondXNlIHN0cmljdCcKCmNvbnN0IHRpdGxlID0gcHJvY2Vzcy5lbnYuRFNIX0RJQUxPR19USVRMRSA/PyAnJwppZiAodGl0bGUgPT09ICcnKSB0aHJvdyBuZXcgRXJyb3IoJ3dpbjMyLWRpYWxvZy13b3JrZXI6IERTSF9ESUFMT0dfVElUTEUgaXMgcmVxdWlyZWQnKQppZiAocHJvY2Vzcy5zZW5kID09PSB1bmRlZmluZWQpIHRocm93IG5ldyBFcnJvcignd2luMzItZGlhbG9nLXdvcmtlciBtdXN0IHJ1biBhcyBhIGNoaWxkIHByb2Nlc3Mgd2l0aCBhbiBJUEMgY2hhbm5lbCcpCmNvbnN0IHNlbmQgPSBwcm9jZXNzLnNlbmQuYmluZChwcm9jZXNzKQoKY29uc3QgcG9zdCA9IChtZXNzYWdlKSA9PiB7CiAgc2VuZChtZXNzYWdlLCAoKSA9PiB7IGlmIChwcm9jZXNzLmNvbm5lY3RlZCkgcHJvY2Vzcy5kaXNjb25uZWN0KCkgfSkKfQpwcm9jZXNzLm9uKCdkaXNjb25uZWN0JywgKCkgPT4gcHJvY2Vzcy5leGl0KDApKQoKLy8gUGxhaW4gc2VuZCB3aXRob3V0IHRoZSBkaXNjb25uZWN0IGNhbGxiYWNrOiBkaXNjb25uZWN0aW5nIGhlcmUgd291bGQgZHJhaW4KLy8gdGhlIGV2ZW50IGxvb3AgYW5kIGV4aXQgdGhpcyB3b3JrZXIgYmVmb3JlIHRoZSByZXF1ZXN0IHNldHRsZXMuCnNlbmQoeyBraW5kOiAnc2hvd2luZycsIHRocmVhZElkOiAwIH0pCgpjb25zdCBwb3J0ID0gTnVtYmVyKHByb2Nlc3MuZW52LkRTSF9HVUlfUElDS0VSX1BPUlQgfHwgMCkKaWYgKHBvcnQgPD0gMCkgewogIHBvc3QoeyBraW5kOiAnZXJyb3InLCBtZXNzYWdlOiAncGlja2VyIHBvcnQgbWlzc2luZyAoRFNIX0dVSV9QSUNLRVJfUE9SVCknIH0pCn0gZWxzZSB7CiAgZmV0Y2goJ2h0dHA6Ly8xMjcuMC4wLjE6JyArIHBvcnQgKyAnL3BpY2stZGlyZWN0b3J5JywgewogICAgbWV0aG9kOiAnUE9TVCcsCiAgICBoZWFkZXJzOiB7ICdDb250ZW50LVR5cGUnOiAnYXBwbGljYXRpb24vanNvbicgfSwKICAgIGJvZHk6IEpTT04uc3RyaW5naWZ5KHsgdGl0bGUgfSksCiAgfSkKICAgIC50aGVuKChyZXNwb25zZSkgPT4gcmVzcG9uc2UuanNvbigpKQogICAgLnRoZW4oKGRhdGEpID0+IHsKICAgICAgaWYgKGRhdGEgIT09IG51bGwgJiYgdHlwZW9mIGRhdGEgPT09ICdvYmplY3QnICYmIGRhdGEuY2FuY2VsbGVkID09PSB0cnVlKSB7CiAgICAgICAgcG9zdCh7IGtpbmQ6ICdkb25lJywgcGF0aDogbnVsbCB9KQogICAgICB9IGVsc2UgaWYgKGRhdGEgIT09IG51bGwgJiYgdHlwZW9mIGRhdGEgPT09ICdvYmplY3QnICYmIHR5cGVvZiBkYXRhLnBhdGggPT09ICdzdHJpbmcnKSB7CiAgICAgICAgcG9zdCh7IGtpbmQ6ICdkb25lJywgcGF0aDogZGF0YS5wYXRoIH0pCiAgICAgIH0gZWxzZSB7CiAgICAgICAgcG9zdCh7IGtpbmQ6ICdlcnJvcicsIG1lc3NhZ2U6ICdwaWNrZXIgcmV0dXJuZWQgYW4gaW52YWxpZCByZXN1bHQnIH0pCiAgICAgIH0KICAgIH0pCiAgICAuY2F0Y2goKGVycm9yKSA9PiB7CiAgICAgIHBvc3QoeyBraW5kOiAnZXJyb3InLCBtZXNzYWdlOiAncGlja2VyIHJlcXVlc3QgZmFpbGVkOiAnICsgU3RyaW5nKGVycm9yICYmIGVycm9yLm1lc3NhZ2UgPyBlcnJvci5tZXNzYWdlIDogZXJyb3IpIH0pCiAgICB9KQp9Cg==";
++const PICKER_WORKER_B64 = "LyoqCiAqIERpcmVjdG9yeS1waWNrZXIgd29ya2VyIChDSlMpLgogKgogKiBJbnN0ZWFkIG9mIHNwYXduaW5nIGl0cyBvd24gZGlhbG9nIHByb2Nlc3MgKHdoaWNoIFdpbmRvd3MgcmVmdXNlcyB0byBicmluZwogKiB0byB0aGUgZm9yZWdyb3VuZCB3aGlsZSB0aGUgR1VJIHdpbmRvdyBpcyBhY3RpdmUpLCB0aGlzIHdvcmtlciBhc2tzIHRoZQogKiBsYXVuY2hlcidzIGxvb3BiYWNrIEhUVFAgc2VydmljZSB0byBvcGVuIEVsZWN0cm9uJ3MgbmF0aXZlIGRpcmVjdG9yeQogKiBkaWFsb2cg4oCUIG1vZGFsLCBmb2N1c2VkLCBhbmQgdmlzaWJsZSBpbiBib3RoIHRoZSBHVUkgYW5kIHRoZSB3ZWIgY2xpZW50LgogKiBQcm90b2NvbCBtYXRjaGVzIHRoZSBvZmZpY2lhbCBkcml2ZXIgKHNob3dpbmcvZG9uZS9lcnJvciBvdmVyIElQQykuCiAqLwondXNlIHN0cmljdCcKCmNvbnN0IHRpdGxlID0gcHJvY2Vzcy5lbnYuRFNIX0RJQUxPR19USVRMRSA/PyAnJwppZiAodGl0bGUgPT09ICcnKSB0aHJvdyBuZXcgRXJyb3IoJ3dpbjMyLWRpYWxvZy13b3JrZXI6IERTSF9ESUFMT0dfVElUTEUgaXMgcmVxdWlyZWQnKQppZiAocHJvY2Vzcy5zZW5kID09PSB1bmRlZmluZWQpIHRocm93IG5ldyBFcnJvcignd2luMzItZGlhbG9nLXdvcmtlciBtdXN0IHJ1biBhcyBhIGNoaWxkIHByb2Nlc3Mgd2l0aCBhbiBJUEMgY2hhbm5lbCcpCmNvbnN0IHNlbmQgPSBwcm9jZXNzLnNlbmQuYmluZChwcm9jZXNzKQoKY29uc3QgcG9zdCA9IChtZXNzYWdlKSA9PiB7CiAgc2VuZChtZXNzYWdlLCAoKSA9PiB7IGlmIChwcm9jZXNzLmNvbm5lY3RlZCkgcHJvY2Vzcy5kaXNjb25uZWN0KCkgfSkKfQpwcm9jZXNzLm9uKCdkaXNjb25uZWN0JywgKCkgPT4gcHJvY2Vzcy5leGl0KDApKQoKLy8gUGxhaW4gc2VuZCB3aXRob3V0IHRoZSBkaXNjb25uZWN0IGNhbGxiYWNrOiBkaXNjb25uZWN0aW5nIGhlcmUgd291bGQgZHJhaW4KLy8gdGhlIGV2ZW50IGxvb3AgYW5kIGV4aXQgdGhpcyB3b3JrZXIgYmVmb3JlIHRoZSByZXF1ZXN0IHNldHRsZXMuCnNlbmQoeyBraW5kOiAnc2hvd2luZycsIHRocmVhZElkOiAwIH0pCgpjb25zdCBwb3J0ID0gTnVtYmVyKHByb2Nlc3MuZW52LkRTSF9HVUlfUElDS0VSX1BPUlQgfHwgMzA4MikKewogIGZldGNoKCdodHRwOi8vMTI3LjAuMC4xOicgKyBwb3J0ICsgJy9waWNrLWRpcmVjdG9yeScsIHsKICAgIG1ldGhvZDogJ1BPU1QnLAogICAgaGVhZGVyczogeyAnQ29udGVudC1UeXBlJzogJ2FwcGxpY2F0aW9uL2pzb24nIH0sCiAgICBib2R5OiBKU09OLnN0cmluZ2lmeSh7IHRpdGxlIH0pLAogIH0pCiAgICAudGhlbigocmVzcG9uc2UpID0+IHJlc3BvbnNlLmpzb24oKSkKICAgIC50aGVuKChkYXRhKSA9PiB7CiAgICAgIGlmIChkYXRhICE9PSBudWxsICYmIHR5cGVvZiBkYXRhID09PSAnb2JqZWN0JyAmJiBkYXRhLmNhbmNlbGxlZCA9PT0gdHJ1ZSkgewogICAgICAgIHBvc3QoeyBraW5kOiAnZG9uZScsIHBhdGg6IG51bGwgfSkKICAgICAgfSBlbHNlIGlmIChkYXRhICE9PSBudWxsICYmIHR5cGVvZiBkYXRhID09PSAnb2JqZWN0JyAmJiB0eXBlb2YgZGF0YS5wYXRoID09PSAnc3RyaW5nJykgewogICAgICAgIHBvc3QoeyBraW5kOiAnZG9uZScsIHBhdGg6IGRhdGEucGF0aCB9KQogICAgICB9IGVsc2UgewogICAgICAgIHBvc3QoeyBraW5kOiAnZXJyb3InLCBtZXNzYWdlOiAncGlja2VyIHJldHVybmVkIGFuIGludmFsaWQgcmVzdWx0JyB9KQogICAgICB9CiAgICB9KQogICAgLmNhdGNoKChlcnJvcikgPT4gewogICAgICBwb3N0KHsga2luZDogJ2Vycm9yJywgbWVzc2FnZTogJ3BpY2tlciByZXF1ZXN0IGZhaWxlZDogJyArIFN0cmluZyhlcnJvciAmJiBlcnJvci5tZXNzYWdlID8gZXJyb3IubWVzc2FnZSA6IGVycm9yKSB9KQogICAgfSkKfQo=";
 +function healProfileDirectoryPicker() {
 +	try {
 +		const target = join(app.getPath("home"), ".dsh", "profiles", "node_modules", "@deepseek-ai", "dsh-host-directory-picker-native", "lib", "worker.cjs");
@@ -642,7 +644,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  /** Install native edit/view/help menus without exposing privileged renderer IPC. */
  function installMenu() {
  	const template = [
-@@ -1168,11 +1380,18 @@ else {
+@@ -1168,11 +1382,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
@@ -663,7 +665,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
-@@ -1183,6 +1402,7 @@ else {
+@@ -1183,6 +1404,7 @@ else {
  		});
  	});
  	app.whenReady().then(async () => {
@@ -671,7 +673,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const logsDirectory = app.getPath("logs");
  		mkdirSync(logsDirectory, { recursive: true });
  		logPath = join(logsDirectory, "desktop.log");
-@@ -1194,6 +1414,19 @@ else {
+@@ -1194,6 +1416,19 @@ else {
  		installMenu();
  		installUpdateSchedule();
  		notifyUpdateResult();

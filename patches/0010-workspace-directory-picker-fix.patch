@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..dcf019d
+index 0000000..707dc76
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,46 @@
 +/**
 + * Directory-picker worker (CJS).
 + *
@@ -29,10 +29,8 @@ index 0000000..dcf019d
 +// the event loop and exit this worker before the request settles.
 +send({ kind: 'showing', threadId: 0 })
 +
-+const port = Number(process.env.DSH_GUI_PICKER_PORT || 0)
-+if (port <= 0) {
-+  post({ kind: 'error', message: 'picker port missing (DSH_GUI_PICKER_PORT)' })
-+} else {
++const port = Number(process.env.DSH_GUI_PICKER_PORT || 3082)
++{
 +  fetch('http://127.0.0.1:' + port + '/pick-directory', {
 +    method: 'POST',
 +    headers: { 'Content-Type': 'application/json' },
