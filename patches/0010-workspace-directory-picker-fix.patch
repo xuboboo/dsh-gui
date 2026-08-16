@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..4b93a41
+index 0000000..0d919d1
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,107 @@
 +/**
 + * Directory-picker worker (CJS).
 + *
@@ -90,17 +90,15 @@ index 0000000..4b93a41
 +
 +// ---- primary: launcher HTTP service (Electron native dialog) ----
 +const port = Number(process.env.DSH_GUI_PICKER_PORT || 3082)
-+const controller = new AbortController()
-+const timer = setTimeout(() => controller.abort(), 1200)
++// No request timeout: the native dialog may wait for the user for minutes,
++// and aborting early would drop the user's selection and hang the caller.
 +fetch('http://127.0.0.1:' + port + '/pick-directory', {
 +  method: 'POST',
 +  headers: { 'Content-Type': 'application/json' },
 +  body: JSON.stringify({ title }),
-+  signal: controller.signal,
 +})
 +  .then((response) => response.json())
 +  .then((data) => {
-+    clearTimeout(timer)
 +    if (data !== null && typeof data === 'object' && data.cancelled === true) {
 +      post({ kind: 'done', path: null })
 +    } else if (data !== null && typeof data === 'object' && typeof data.path === 'string') {
@@ -110,7 +108,6 @@ index 0000000..4b93a41
 +    }
 +  })
 +  .catch(() => {
-+    clearTimeout(timer)
 +    // Launcher service unavailable (older launcher): fall back to cscript.
 +    pickViaCscript()
 +  })
