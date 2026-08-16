@@ -14,7 +14,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
   * to disable the automatic check (manual check via the Help menu still works).
   */
 -const DSH_GUI_VERSION = "1.0.8";
-+const DSH_GUI_VERSION = "1.0.13";
++const DSH_GUI_VERSION = "1.0.14";
  const UPDATE_REPO = "xuboboo/dsh-gui";
  const UPDATE_REPO_API = process.env.DSH_GUI_UPDATE_API ?? ("https://api.github.com/repos/" + UPDATE_REPO);
  const UPDATE_CHECK_DELAY_MS = 8_000;
@@ -547,25 +547,28 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath];
  		if (relaunch) args.push("-relaunch");
  		const child = spawn("powershell", args, {
-@@ -1045,10 +1184,13 @@ function notifyUpdateResult() {
+@@ -1043,13 +1182,15 @@ function notifyUpdateResult() {
+ 					cancelId: 0,
+ 				});
  			}
++			// Clean staging BEFORE removing the marker: an applied update must not
++			// re-stage on every exit (stale manifest/payload would re-trigger the
++			// "update applied" dialog on every startup).
++			for (const name of ["manifest.json", "payload.bin", "apply.log"]) {
++				const p = join(stageDir, name);
++				if (existsSync(p)) { try { unlinkSync(p); } catch { } }
++			}
  			unlinkSync(applied);
  		}
 -		// Best-effort cleanup of staging leftovers (backup stays for rollback).
 -		for (const name of ["manifest.json", "payload.asar", "apply.log"]) {
 -			const p = join(stageDir, name);
 -			if (existsSync(p)) { try { unlinkSync(p); } catch { } }
-+		// Cleanup happens only right after an applied update; a staged-but-not
-+		// applied payload is kept so the restart toast can resurface (F1).
-+		if (existsSync(applied)) {
-+			for (const name of ["manifest.json", "payload.bin", "apply.log"]) {
-+				const p = join(stageDir, name);
-+				if (existsSync(p)) { try { unlinkSync(p); } catch { } }
-+			}
- 		}
+-		}
  	} catch (error) {
  		log("updater", `update result notice failed: ${String(error)}`);
-@@ -1060,6 +1202,78 @@ function installUpdateSchedule() {
+ 	}
+@@ -1060,6 +1201,78 @@ function installUpdateSchedule() {
  	setInterval(() => { void checkForUpdate(false); }, UPDATE_CHECK_INTERVAL_MS);
  }
  //#endregion
@@ -644,14 +647,15 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  /** Install native edit/view/help menus without exposing privileged renderer IPC. */
  function installMenu() {
  	const template = [
-@@ -1168,11 +1382,18 @@ else {
+@@ -1168,11 +1381,18 @@ else {
  		// the app themselves next time).
  		try {
  			const staged = join(app.getPath("userData"), "dsh-gui-update", "manifest.json");
 -			if (existsSync(staged) && existsSync(join(app.getPath("userData"), "dsh-gui-update", "app.asar"))) {
 +			if (existsSync(staged) && isUpdateStaged()) {
  				const manifest = JSON.parse(readFileSync(staged, "utf8"));
- 				if (typeof manifest.version === "string" && !existsSync(join(app.getPath("userData"), "dsh-gui-update", "applied.json"))) {
+-				if (typeof manifest.version === "string" && !existsSync(join(app.getPath("userData"), "dsh-gui-update", "applied.json"))) {
++				if (typeof manifest.version === "string" && manifest.version !== DSH_GUI_VERSION && !existsSync(join(app.getPath("userData"), "dsh-gui-update", "applied.json"))) {
  					log("updater", "applying staged update on exit");
 -					scheduleApplyOnExit(manifest.version, false);
 +					try {
@@ -665,7 +669,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  				}
  			}
  		} catch (error) {
-@@ -1183,6 +1404,7 @@ else {
+@@ -1183,6 +1403,7 @@ else {
  		});
  	});
  	app.whenReady().then(async () => {
@@ -673,7 +677,7 @@ diff --git a/desktop/lib/main.js b/desktop/lib/main.js
  		const logsDirectory = app.getPath("logs");
  		mkdirSync(logsDirectory, { recursive: true });
  		logPath = join(logsDirectory, "desktop.log");
-@@ -1194,6 +1416,19 @@ else {
+@@ -1194,6 +1415,19 @@ else {
  		installMenu();
  		installUpdateSchedule();
  		notifyUpdateResult();
