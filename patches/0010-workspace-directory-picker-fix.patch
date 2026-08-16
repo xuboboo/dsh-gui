@@ -1,24 +1,20 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
 new file mode 100644
-index 0000000..269a3ae
+index 0000000..f2247f4
 --- /dev/null
 +++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,65 @@
 +/**
-+ * CJS worker entry for the Win32 folder dialog.
++ * Directory-picker worker (CJS).
 + *
-+ * The official rc.5 package declares lib/worker.cjs in package.json but its
-+ * build never emitted the file, and the npm-published copy crashes natively
-+ * in readUtf16 (koffi.view over-reads the heap; koffi.decode('str16')
-+ * re-dereferences the pointer). This is a manual CJS build of the three
-+ * official sources with a safe string walker:
-+ *   - win32-dialog-worker.ts   (process entry + IPC protocol)
-+ *   - win32-dialog-bindings.ts (koffi COM surface)
-+ *   - win32-dialog-logic.ts    (IFileOpenDialog sequencing)
-+ * Spawned by dsh-host-directory-picker-native's win32-dialog-host.ts with
-+ * ELECTRON_RUN_AS_NODE (inherited), so it runs under plain node semantics.
-+ * It is launched from app.asar.unpacked (Electron cannot use an asar path
-+ * as a process entry point), so koffi is resolved inside the asar by path.
++ * The official rc.5 package's worker relies on koffi COM calls plus manual
++ * string reads; on the packaged Electron binary koffi's native layer faults
++ * (napi fatal error in readUtf16) and the worker dies without a result,
++ * surfacing as "win32 folder dialog worker exited before reporting a result"
++ * in the GUI. This implementation avoids native bindings entirely: it asks
++ * PowerShell's System.Windows.Forms.FolderBrowserDialog for the directory.
++ * The protocol (showing/done/error over the parent IPC channel) matches the
++ * official driver in dsh-host-directory-picker-native/lib/index.js.
 + */
 +'use strict'
 +
@@ -32,189 +28,47 @@ index 0000000..269a3ae
 +}
 +process.on('disconnect', () => process.exit(0))
 +
-+// ---- win32-dialog-logic.ts constants ----
-+const HRESULT_CANCELLED = 0x800704c7 | 0
-+const FOS_PICKFOLDERS = 0x20
-+const FOS_FORCEFILESYSTEM = 0x40
-+const FOS_NOCHANGEDIR = 0x8
++const { spawn } = require('node:child_process')
 +
-+// ---- win32-dialog-bindings.ts constants ----
-+const COINIT_APARTMENTTHREADED = 0x2
-+const CLSCTX_INPROC_SERVER = 0x1
-+const SIGDN_FILESYSPATH = 0x80058000 | 0
-+const DPI_AWARENESS_CONTEXTS = [-4, -3, -2]
-+const SLOT_RELEASE = 2
-+const SLOT_SHOW = 3
-+const SLOT_SET_OPTIONS = 9
-+const SLOT_SET_TITLE = 17
-+const SLOT_GET_RESULT = 20
-+const SLOT_GET_DISPLAY_NAME = 5
++// PowerShell script: classic folder dialog, prints the chosen path or
++// nothing when cancelled. BOM-less ASCII only (no non-ASCII literals).
++const PS_SCRIPT = [
++  'Add-Type -AssemblyName System.Windows.Forms | Out-Null',
++  '$f = New-Object System.Windows.Forms.FolderBrowserDialog',
++  '$f.Description = $env:DSH_DIALOG_TITLE',
++  '$f.ShowNewFolderButton = $true',
++  'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {',
++  '  Write-Output $f.SelectedPath',
++  '}',
++].join("\r\n")
 +
-+function readUtf16(koffi, address) {
-+  // The _Out_ void ** value is the CoTaskMemAlloc'd LPWSTR itself. Neither
-+  // koffi.decode(addr, 'str16') (koffi re-dereferences it as a pointer) nor
-+  // koffi.view(addr, 32768) (over-reads the heap allocation, native fault)
-+  // is safe — walk the string one 2-byte unit at a time so every view stays
-+  // inside the allocation. Official rc.5 crashed here on every selection.
-+  if (!address) return ''
-+  let out = ''
-+  let offset = 0
-+  try {
-+    while (offset < 32768) {
-+      const ab = koffi.view(Number(address) + offset, 2)
-+      const code = Buffer.from(ab).readUInt16LE(0)
-+      if (code === 0) break
-+      out += String.fromCharCode(code)
-+      offset += 2
-+    }
-+    return out
-+  } catch {
-+    return out
-+  }
-+}
++// Announce the dialog about to appear. Plain send without the disconnect
++// callback: disconnecting here would drain the event loop and exit this
++// worker before the PowerShell child finishes (the official worker blocks
++// synchronously in the koffi dialog call, so it never hits this).
++send({ kind: 'showing', threadId: 0 })
 +
-+function guidBytes(text) {
-+  const match = /^([0-9a-f]{8})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{12})$/i.exec(text)
-+  const bytes = Buffer.alloc(16)
-+  bytes.writeUInt32LE(parseInt(match[1], 16), 0)
-+  bytes.writeUInt16LE(parseInt(match[2], 16), 4)
-+  bytes.writeUInt16LE(parseInt(match[3], 16), 6)
-+  Buffer.from(match[4] + match[5], 'hex').copy(bytes, 8)
-+  return bytes
-+}
++const child = spawn('powershell.exe', [
++  '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', PS_SCRIPT,
++], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DSH_DIALOG_TITLE: title } })
 +
-+const CLSID_FILE_OPEN_DIALOG = guidBytes('dc1c5a9c-e88a-4dde-a5a1-60f82a20aef7')
-+const IID_IFILE_OPEN_DIALOG = guidBytes('d57c7288-d4ad-4768-be02-9d969532d960')
-+
-+async function loadWin32DialogBindings() {
-+  // This worker is launched from app.asar.unpacked (Electron cannot use an
-+  // asar path as a process entry point), so resolve the koffi package inside
-+  // the asar explicitly; in a plain source tree both paths coincide.
-+  const path = require('node:path')
-+  const { pathToFileURL } = require('node:url')
-+  let pkgRoot = path.join(__dirname, '..', '..', '..')
-+  if (pkgRoot.includes('app.asar.unpacked')) {
-+    pkgRoot = pkgRoot.replace(/[\\/]app\.asar\.unpacked[\\/]/, '\\app.asar\\')
-+  }
-+  const koffiModule = await import(pathToFileURL(path.join(pkgRoot, 'koffi', 'index.js')).href)
-+  const koffi = koffiModule.default
-+
-+  const ole32 = koffi.load('ole32.dll')
-+  const user32 = koffi.load('user32.dll')
-+  const kernel32 = koffi.load('kernel32.dll')
-+
-+  const pointerSize = koffi.sizeof('void *')
-+  const coInitializeEx = ole32.func('__stdcall', 'CoInitializeEx', 'int32', ['void *', 'uint32'])
-+  const coUninitialize = ole32.func('__stdcall', 'CoUninitialize', 'void', [])
-+  const coCreateInstance = ole32.func('__stdcall', 'CoCreateInstance', 'int32', ['void *', 'void *', 'uint32', 'void *', 'void *'])
-+  const coTaskMemFree = ole32.func('__stdcall', 'CoTaskMemFree', 'void', ['void *'])
-+  const getCurrentThreadId = kernel32.func('__stdcall', 'GetCurrentThreadId', 'uint32', [])
-+
-+  const protoShow = koffi.proto('int32 __stdcall DshDialogShow(void *self, void *owner)')
-+  const protoSetOptions = koffi.proto('int32 __stdcall DshDialogSetOptions(void *self, uint32 options)')
-+  const protoSetTitle = koffi.proto('int32 __stdcall DshDialogSetTitle(void *self, str16 title)')
-+  const protoGetResult = koffi.proto('int32 __stdcall DshDialogGetResult(void *self, _Out_ void **item)')
-+  const protoGetDisplayName = koffi.proto('int32 __stdcall DshItemGetDisplayName(void *self, int32 form, _Out_ void **name)')
-+  const protoRelease = koffi.proto('uint32 __stdcall DshComRelease(void *self)')
-+
-+  const method = (self, slot, proto) => {
-+    const vtable = koffi.decode(self, 'void *')
-+    const fn = koffi.decode(vtable, slot * pointerSize, 'void *')
-+    return (...args) => koffi.call(fn, proto, self, ...args)
-+  }
-+
-+  const setThreadDpiAwareness = () => {
-+    let setContext
-+    try {
-+      setContext = user32.func('__stdcall', 'SetThreadDpiAwarenessContext', 'void *', ['intptr'])
-+    } catch {
-+      return
-+    }
-+    for (const context of DPI_AWARENESS_CONTEXTS) {
-+      if (setContext(context) !== null) return
-+    }
-+  }
-+
-+  const createFolderDialog = () => {
-+    const out = Buffer.alloc(pointerSize)
-+    const created = coCreateInstance(CLSID_FILE_OPEN_DIALOG, null, CLSCTX_INPROC_SERVER, IID_IFILE_OPEN_DIALOG, out)
-+    if (created < 0) throw new Error(`CoCreateInstance(FileOpenDialog) failed: HRESULT 0x${(created >>> 0).toString(16)}`)
-+    const dialog = koffi.decode(out, 'void *')
-+    return {
-+      setOptions: (options) => method(dialog, SLOT_SET_OPTIONS, protoSetOptions)(options),
-+      setTitle: (t) => method(dialog, SLOT_SET_TITLE, protoSetTitle)(t),
-+      show: () => method(dialog, SLOT_SHOW, protoShow)(null),
-+      resultPath: () => {
-+        const itemOut = [null]
-+        const gotItem = method(dialog, SLOT_GET_RESULT, protoGetResult)(itemOut)
-+        if (gotItem < 0) return { hr: gotItem }
-+        const item = itemOut[0]
-+        try {
-+          const nameOut = [null]
-+          const gotName = method(item, SLOT_GET_DISPLAY_NAME, protoGetDisplayName)(SIGDN_FILESYSPATH, nameOut)
-+          if (gotName < 0) return { hr: gotName }
-+          const p = readUtf16(koffi, nameOut[0])
-+          try { coTaskMemFree(nameOut[0]) } catch { }
-+          return { hr: gotName, path: p }
-+        } finally {
-+          try { method(item, SLOT_RELEASE, protoRelease)() } catch { }
-+        }
-+      },
-+      release: () => { try { method(dialog, SLOT_RELEASE, protoRelease)() } catch { } },
-+    }
-+  }
-+
-+  return {
-+    setThreadDpiAwareness,
-+    coInitializeSta: () => coInitializeEx(null, COINIT_APARTMENTTHREADED),
-+    coUninitialize: () => { try { coUninitialize() } catch { } },
-+    currentThreadId: () => getCurrentThreadId(),
-+    createFolderDialog,
-+  }
-+}
-+
-+// ---- win32-dialog-logic.ts sequencing ----
-+function check(hr, what) {
-+  if (hr < 0) throw new Error(`${what} failed: HRESULT 0x${(hr >>> 0).toString(16)}`)
-+  return hr
-+}
-+
-+function runFolderDialog(bindings, dialogTitle, onShowing) {
-+  bindings.setThreadDpiAwareness()
-+  check(bindings.coInitializeSta(), 'CoInitializeEx')
-+  try {
-+    const dialog = bindings.createFolderDialog()
-+    try {
-+      check(dialog.setOptions(FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR), 'SetOptions')
-+      check(dialog.setTitle(dialogTitle), 'SetTitle')
-+      onShowing(bindings.currentThreadId())
-+      const shown = dialog.show()
-+      if (shown === HRESULT_CANCELLED) return null
-+      check(shown, 'Show')
-+      const result = dialog.resultPath()
-+      check(result.hr, 'GetResult')
-+      return result.path
-+    } finally {
-+      dialog.release()
-+    }
-+  } finally {
-+    bindings.coUninitialize()
-+  }
-+}
-+
-+// ---- worker entry ----
-+void (async () => {
-+  try {
-+    const bindings = await loadWin32DialogBindings()
-+    const path = runFolderDialog(bindings, title, (threadId) => {
-+      post({ kind: 'showing', threadId })
-+    })
++let stdout = ''
++let stderr = ''
++child.stdout.on('data', (d) => { stdout += String(d) })
++child.stderr.on('data', (d) => { stderr += String(d) })
++child.on('error', (error) => {
++  post({ kind: 'error', message: String(error && error.message ? error.message : error) })
++})
++child.on('close', (code) => {
++  const path = stdout.trim().split(/\r?\n/)[0] || null
++  if (code === 0 && path !== null && path.length > 0) {
 +    post({ kind: 'done', path })
-+  } catch (error) {
-+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
-+    post({ kind: 'error', message })
++  } else if (code === 0) {
++    post({ kind: 'done', path: null })
++  } else {
++    post({ kind: 'error', message: 'folder dialog failed (exit ' + code + '): ' + stderr.slice(0, 200) })
 +  }
-+})()
++})
 diff --git a/node_modules/@koromix/koffi-win32-x64/index.js b/node_modules/@koromix/koffi-win32-x64/index.js
 new file mode 100644
 index 0000000..6dba06c
