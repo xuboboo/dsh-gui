@@ -43,6 +43,15 @@ Error: failed to apply loader entry <id> (@deepseek-ai/cordis-plugin-hmr): --exp
 
 ---
 
+## v1.0.10 附加说明（目录选择器修复）
+
+- 新增补丁 **0010**：官方 rc.5 打包漏发两个文件导致"添加工作区"报 `win32 folder dialog worker exited before reporting a result`：
+  1. `node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/worker.cjs` — package.json 声明但构建从未产出（手工按官方源码构建的 CJS 版本）；
+  2. `node_modules/@koromix/koffi-win32-x64/{index.js,package.json,win32_x64/koffi.node,koffi.lib}` — 官方包只剩 README，koffi 无法加载平台绑定。
+- 验证：worker 子进程（ELECTRON_RUN_AS_NODE）成功加载 koffi 并弹出系统文件夹对话框。
+
+---
+
 ## v1.0.9 附加说明（静默升级 + 应用内重启提示条）
 
 - 新增补丁 **0009**（`desktop/lib/main.js`）：更新流程改为**静默升级**。
