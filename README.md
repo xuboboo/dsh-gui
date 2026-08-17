@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.9-win-x64.zip`**（Windows 64 位，约 280 MB）— 最新版（静默升级 + 应用内重启提示条，原生提示框，重启服务不再误报）
+- **`dsh-gui-v1.0.17-win-x64.zip`**（Windows 64 位，约 280 MB）— 最新版（含新电脑首次启动修复 + 自动更新循环修复）
 
 ### 安装步骤
 
@@ -81,15 +81,13 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 
 ## 更新日志 / Changelog
 
-### v1.0.1（2026-08-15）
+### v1.0.17（2026-08-17）
 
-- 🐛 **修复复制按钮无反应**：官方 launcher 默认拒绝一切权限请求（`setPermissionRequestHandler` 一律 `callback(false)`），导致 `navigator.clipboard.writeText` 被拒、复制按钮静默失效。v1.0.1 放行 `clipboard-sanitized-write` 权限（见 `patches/0003-launcher-clipboard-permission.patch`）。
+- 🔄 **修复"自动更新无限循环"**（v1.0.16 更新循环问题）：内置版本号 `DSH_GUI_VERSION` 同步为 1.0.17，不再自我触发更新；更新器对"暂存版本不高于当前版本"的旧更新包自动清理，退出时不再应用旧包（即使之前循环残留，升级后也会自动清除）。
 
-### v1.0.0（2026-08-14）
+### v1.0.16（2026-08-17）
 
-- 首个发行版：品牌启动动画、DeepSeek 设计语言主题、rc.5 启动崩溃修复
-
-## 更新日志 / Changelog
+- 🐛 **修复新电脑首次启动失败**（`runtime exited with code 1` / `ERR_MODULE_NOT_FOUND`）：Windows 下 `healProfilesModuleFallback` 不再创建指向 `app.asar` 内部路径的 Junction（Node ESM 加载器无法解析这类路径），改为实体拷贝 `app.asar` 与 `app.asar.unpacked` 中的全部依赖（含 node-pty / sharp / koffi / ripgrep 等原生模块）到 `%USERPROFILE%\.dsh\profiles\node_modules`；已有完整目录跳过、残留 Junction 替换，首次启动自动完成（1–3 分钟），之后正常速度。已在全新 `DSH_HOME` 环境实测通过。
 
 ### v1.0.15（2026-08-16）
 
