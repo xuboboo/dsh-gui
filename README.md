@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.40-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**；自包含 asar，支持旧版本自动升级；目录选择器改用 GUI 原生对话框）。如需官方 rc.5 稳定版可回退到 v1.0.17。
+- **`dsh-gui-v1.0.41-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**；自包含 asar 支持旧版本自动升级；目录选择器 GUI 原生对话框；修复"立即重启"不生效）。如需官方 rc.5 稳定版可回退到 v1.0.17。
 
 ### 安装步骤
 
@@ -80,6 +80,13 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
+
+### v1.0.41（2026-08-22）
+
+- 🔧 **修复"立即重启"不重启 GUI** — 点更新提示条的「立即重启」后应用退出但不重新打开。根因：`before-quit` 处理器在 `applyUpdateAndRelaunch` 调 `app.relaunch()` + `app.quit()` 时，`before-quit` 里 `event.preventDefault()` + `stopHarness().then(app.exit(0))` 用 `app.exit(0)` 硬退出，杀死了 `app.relaunch()` 计划的新实例（Windows 上 relaunch 子进程随父进程的 Job Object 一起终止）。修复：新增 `relaunching` 标志，`applyUpdateAndRelaunch` 设置它，`before-quit` 检测到后走**正常退出**（`app.quit()` 而非 `app.exit(0)`），让 Electron 尊重 `app.relaunch()`。
+- 🛠️ 自包含 app.asar（兼容旧版本自动升级）。
+- 📁 目录选择器 GUI 原生对话框（根治 koffi worker 崩溃）。
+- 🖼️ 官方 rc.2 多模态。
 
 ### v1.0.40（2026-08-22）
 
