@@ -87,3 +87,52 @@ Error: failed to apply loader entry <id> (@deepseek-ai/cordis-plugin-hmr): --exp
   2. 就绪 URL 按进程归属跟踪（`applicationUrlOwner`），旧进程退出不再清掉新进程的就绪状态；
   3. Windows 下 `stopHarness` 真正等待子进程 exit 事件（带 5s 上限）后再启动新进程，消除端口释放竞态；
   4. 重启增加重入保护，连点"重新启动本地服务"不会反复杀掉刚起来的服务。
+
+---
+
+## v1.1.0 附加说明（官方 rc.2 多模态升级适配）
+
+> 把 dsh-gui 从官方 **rc.5(0.1.0-rc.5,即稳定版 v1037)** 升级到官方最新**多模态版本 rc.2(0.1.1-rc.2 / `dsh-v0.1.1-rc.2` tag)**。官方 rc.2 新增图片/附件多模态能力（`dsh-client-ui-attachment`、`dsh-attachment`、ACP 等），但**删除了 rc.5 的两个包**并重构了启动逻辑，导致直接升级会启动崩溃或插件加载失败。本次适配做了三个修复：
+
+### 1. `dsh-app-boot/lib/index.js` —— 启动崩溃根治（核心）
+
+官方 rc.2 的 `ensureSymlink` 遇到"真实目录"（不是 symlink）会 `throw`，而 dsh-gui 的 profile 依赖是**实体目录**（v1037 的 v1.0.16 修复后布局），因此升级后启动即崩：
+
+```
+Error: dsh: ...\profiles\node_modules\@deepseek-ai\dsh exists and is not a symlink; remove it
+	at ensureSymlink (dsh-app-boot/lib/index.js:379)
+```
+
+- 修复：`ensureSymlink` 遇到真实目录由 `throw` 改为 `return`（移植 v1037 的 patch 0002）。
+- **并移植 v1037 的完整 `healProfilesModuleFallback`**：rc.2 官方版只做简单 symlink closure，缺失了 v1037 的关键逻辑：
+  - `app.asar.unpacked` 原生模块处理（node-pty / sharp / koffi / ripgrep …）；
+  - **`dsh-profile-seed` 种子 junction 优先**（毫秒级启动，替代 ~150MB 实体拷贝）；
+  - Windows 下对 asar 内目标**实体拷贝**（Node ESM 解析不了指向 `app.asar` 内文件的 junction）；
+  - `isForeignPlatform` 过滤、`readHealStamp` / `manifestsMatch` / `copyPackageDir` / `fillMissingFiles` 辅助函数。
+
+缺少这套逻辑会导致**新电脑首次启动失败**（`ERR_MODULE_NOT_FOUND` / `runtime exited with code 1`）。
+
+### 2. `desktop/lib/main.js` —— 目录选择器改用官方原生 + 防弹浏览器
+
+- **目录选择器**：官方 rc.2 已修复目录选择器（自带 `worker.cjs` + koffi win32 原生 `IFileOpenDialog` 平台绑定）。因此**移除 v1037 的 `healProfileDirectoryPicker` 强制覆盖**（它塞的是 rc.5 的 PowerShell 兜底 worker，协议与 rc.2 原生 worker 不同，覆盖反而破坏），改用官方原生。保留 3082 loopback HTTP 服务作无害兜底。
+- **`--no-open`**：rc.2 的 `dsh web` 默认 `openBrowser: true` 会自动打开系统浏览器；桌面 GUI 由 Electron 窗口承载，spawn 参数加 `--no-open` 禁用。
+
+### 3. `@deepseek-ai/dsh-client-ui-settings-token-usage` —— Token 用量统计插件修复
+
+官方 rc.2 移除了 `@deepseek-ai/dsh-client-web-react`，但 Token 用量统计插件（rc.5 遗留）仍引用它，导致客户端插件加载失败：
+
+```
+Failed to load plugins
+failed to import loader entry (...@deepseek-ai/dsh-client-ui-settings-token-usage):
+client-modules: require("@deepseek-ai/dsh-client-web-react") missed the module table
+```
+
+- 修复：把插件 `lib/client.js` 里的 `bindSnapshotSelector` **内联实现**（直接用 React 的 `useSyncExternalStore`），去掉对被删包的 require；同步更新 `src` 源码、`.d.ts` 类型、`package.json` peer/devDependencies。
+
+### 验证结果
+
+- `dsh web: http://127.0.0.1:3081` 就绪，HTTP 200，窗口标题 "DSH Local Build"；
+- profile 依赖重建为指向 rc.2 seed 的 junction，多模态依赖（`dsh-attachment`、`dsh-client-ui-attachment`、`dsh-web-frontend` 等）全部就位；
+- Token 用量统计页不再报 "Failed to load plugins"。
+
+> 说明：上述修改直接落在已构建的 npm 包产物（`lib/`、`src/`、`package.json`）上，非标准源码 diff；差异见 `patches/0011-rc2-multimodal-upgrade.patch`。

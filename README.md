@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.17-win-x64.zip`**（Windows 64 位，约 280 MB）— 最新版（含新电脑首次启动修复 + 自动更新循环修复）
+- **`dsh-gui-v1.0.38-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**，并完成结构瘦身：安装包从 904 MB 降到 365 MB）。如需官方 rc.5 稳定版可回退到 v1.0.17。
 
 ### 安装步骤
 
@@ -27,7 +27,7 @@
 
 - 操作系统：Windows 10 / 11（64 位）
 - 内存：建议 4 GB 以上
-- 磁盘：解压后约 900 MB
+- 磁盘：解压后约 365 MB（zip）/ 约 650 MB（解压后，含完整运行时）
 - **无需 Node.js / npm / pnpm / 任何开发环境**（内置运行时）
 
 ## 使用说明 / Usage
@@ -80,6 +80,21 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
+
+### v1.0.38（2026-08-22）
+
+- 🖼️ **新增支持多模态能力，适配官方多模态能力** — 底层基于官方 **rc.2（0.1.1-rc.2）多模态**，支持图片/附件输入（`dsh-client-ui-attachment`、`dsh-attachment`、ACP 等），与官方多模态能力对齐。
+- 📁 **目录选择器改用 GUI 原生对话框（根治 koffi worker 崩溃）** — 新电脑/新目录选工作区不再报 `win32 folder dialog worker exited before reporting a result`。改为优先走 Electron 原生模态对话框（127.0.0.1:3082），仅在 GUI 端点不可达（web-only / 旧桌面）时回退 koffi worker；彻底解决 koffi 崩溃、中文路径乱码、对话框被遮挡、焦点误触关机、选择结果被超时丢弃等一系列问题。已在本机实测（真实弹窗选目录返回正确路径）。
+- 🧹 **结构瘦身** — 完整包从 **904 MB 降到 365 MB**（省 60%）。剔除 codex/claude 子代理 CLI（353 MB + 253 MB，可用 `dsh plugin add` 按需装回）、rolldown/oxlint/lefthook/typescript 等开发工具链、以及 10199 个 `.map` 调试文件；保留全部运行时依赖（koffi/sharp/node-pty/ripgrep 原生模块）与 19 项安全补丁。
+- 🐛 **修复新电脑首次启动崩溃**（`Cannot find package '@babel/code-frame'` / `runtime exited with code 1`）— 瘦身时误删了运行时必需的 `@babel/code-frame` 及 `@babel/helper-validator-identifier`（`cordis-plugin-hmr` 硬依赖），现已恢复，新电脑可正常启动。
+
+### v1.1.0（2026-08-22）
+
+- 🖼️ **升级到官方最新多模态版本（rc.2 / `0.1.1-rc.2`）** — 底层从官方 rc.5（0.1.0-rc.5）升级到官方最新多模态 rc.2，新增图片/附件输入能力（`dsh-client-ui-attachment`、`dsh-attachment`、ACP 等）。
+- 🔧 **升级后启动崩溃根治** — 官方 rc.2 的 `dsh-app-boot` `ensureSymlink` 遇真实目录会抛错；改为直接跳过，并移植 v1037 的完整 `healProfilesModuleFallback`（种子 junction 优先 + asar 实体拷贝 + 原生模块处理 + heal stamp），保证新电脑首次启动 / ESM 解析 / 版本一致性。
+- 📁 **目录选择器改用官方原生** — 官方 rc.2 已自带 `worker.cjs` + koffi 原生 `IFileOpenDialog`；移除 v1037 的 PowerShell 兜底 worker 强制覆盖（避免用旧协议破坏 rc.2 原生选择器），保留 3082 兜底。
+- 🖥️ **防自动弹浏览器** — rc.2 的 `dsh web` 默认会打开系统浏览器；spawn 加 `--no-open`，由桌面窗口承载。
+- 📊 **Token 用量统计插件修复** — 官方 rc.2 移除了 `@deepseek-ai/dsh-client-web-react`，导致该插件加载失败；改为内联 `bindSnapshotSelector`（React `useSyncExternalStore`），不再依赖被删包。
 
 ### v1.0.17（2026-08-17）
 
