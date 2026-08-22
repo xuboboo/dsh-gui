@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.38-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**，并完成结构瘦身：安装包从 904 MB 降到 365 MB）。如需官方 rc.5 稳定版可回退到 v1.0.17。
+- **`dsh-gui-v1.0.39-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**，并完成结构瘦身：安装包从 904 MB 降到 365 MB；目录选择器改用 GUI 原生对话框，支持自动升级生效）。如需官方 rc.5 稳定版可回退到 v1.0.17。
 
 ### 安装步骤
 
@@ -80,6 +80,10 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
+
+### v1.0.39（2026-08-22）
+
+- 📁 **目录选择器 GUI 修复随自动升级生效** — 将 GUI 原生对话框（Electron `dialog.showOpenDialog`，127.0.0.1:3082）的调用前移至 `host.pickDirectory`（app.asar 内），旧用户自动升级替换 `app.asar` 后即生效，不再依赖重建 seed。目录选择器改用 Electron 原生模态框，根治 `win32 folder dialog worker exited before reporting a result`、中文路径乱码、对话框被遮挡、焦点误触关机、选择结果被超时丢弃等问题。
 
 ### v1.0.38（2026-08-22）
 
