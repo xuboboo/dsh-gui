@@ -9,7 +9,7 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.39-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**，并完成结构瘦身：安装包从 904 MB 降到 365 MB；目录选择器改用 GUI 原生对话框，支持自动升级生效）。如需官方 rc.5 稳定版可回退到 v1.0.17。
+- **`dsh-gui-v1.0.40-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**；自包含 asar，支持旧版本自动升级；目录选择器改用 GUI 原生对话框）。如需官方 rc.5 稳定版可回退到 v1.0.17。
 
 ### 安装步骤
 
@@ -80,6 +80,13 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
+
+### v1.0.40（2026-08-22）
+
+- 🛠️ **恢复自包含 app.asar（关键兼容性修复）** — 旧版本（1.0.17 及更早）打包是"自包含 asar"（node_modules 全部打进 `app.asar`，`app.asar.unpacked` 只放原生模块）；而 1.0.38/1.0.39 误改成"全 unpack"（node_modules 全在 unpacked，asar 只剩空壳 10 MB）。这导致旧用户 **只替换 app.asar 升级**时，新 asar 是空壳却找不到 unpacked 里的 node_modules → 启动报 `ENOENT ... app.asar.unpacked/node_modules/@deepseek-ai/dsh/lib/bin.js` / `runtime exited with code 1`。本版**恢复自包含 asar**（`app.asar` 328 MB 自带全部 node_modules），旧用户升级兼容性彻底修复。
+- 📁 **目录选择器 GUI 修复随自动升级生效** — GUI 原生对话框调用已前移至 `host.pickDirectory`（app.asar 内），配合自包含 asar，旧用户升级替换 `app.asar` 后即生效。根治 `win32 folder dialog worker exited before reporting a result`。
+- 🖼️ 底层官方 **rc.2 多模态**（图片/附件输入）。
+- 🧹 结构瘦身（完整包 341 MB）；保留全部运行时依赖与 19 项安全补丁。
 
 ### v1.0.39（2026-08-22）
 
