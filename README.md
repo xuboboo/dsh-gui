@@ -10,6 +10,7 @@
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
 - **`dsh-gui-v1.0.41-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**；自包含 asar 支持旧版本自动升级；目录选择器 GUI 原生对话框；修复"立即重启"不生效）。如需官方 rc.5 稳定版可回退到 v1.0.17。
+- **`dsh-gui-v1.0.41-mac-universal.zip`**（macOS Universal，429 MB）— **同时支持 Intel 芯片与 Apple 芯片（M1/M2/M3/M4）原生运行**；要求 macOS 11+；解压后将 `DeepSeek Harness.app` 拖入「应用程序」。未签名构建：首次打开若提示"无法验证开发者/已损坏"，右键 App → 打开（一次即可），或执行 `xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"`。
 
 ### 安装步骤
 
@@ -25,9 +26,9 @@
 
 ## 系统要求 / System requirements
 
-- 操作系统：Windows 10 / 11（64 位）
+- 操作系统：Windows 10 / 11（64 位），或 macOS 11+（Intel / Apple 芯片均支持，Universal 原生运行）
 - 内存：建议 4 GB 以上
-- 磁盘：解压后约 365 MB（zip）/ 约 650 MB（解压后，含完整运行时）
+- 磁盘：Windows 解压后约 365 MB（zip）/ 约 650 MB（解压后）；macOS 完整包约 429 MB（zip）
 - **无需 Node.js / npm / pnpm / 任何开发环境**（内置运行时）
 
 ## 使用说明 / Usage
@@ -87,6 +88,7 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🛠️ 自包含 app.asar（兼容旧版本自动升级）。
 - 📁 目录选择器 GUI 原生对话框（根治 koffi worker 崩溃）。
 - 🖼️ 官方 rc.2 多模态。
+- 🍎 **新增 macOS Universal 版**（`dsh-gui-v1.0.41-mac-universal.zip`，429 MB）— Electron 43.4.0 双架构原生二进制（x86_64 + arm64，同一 .app 同时支持 Intel 与 Apple 芯片）；内置 darwin 双架构全套原生模块（node-pty / sharp / libvips / koffi / ripgrep / oxc 等）；mac 更新器走 `*-mac-universal-asar.zip` 资产；下载器/系统代理/退出应用更新脚本已做 macOS 适配（curl、sh 兜底）。要求 macOS 11+；未签名，首次打开需右键 → 打开或 `xattr -dr com.apple.quarantine`。
 
 ### v1.0.40（2026-08-22）
 
