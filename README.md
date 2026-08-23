@@ -9,8 +9,8 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.41-win-x64.zip`**（Windows 64 位）— 最新版（升级到官方 **rc.2 多模态**；自包含 asar 支持旧版本自动升级；目录选择器 GUI 原生对话框；修复"立即重启"不生效）。如需官方 rc.5 稳定版可回退到 v1.0.17。
-- **`dsh-gui-v1.0.41-mac-universal.zip`**（macOS Universal，429 MB）— **同时支持 Intel 芯片与 Apple 芯片（M1/M2/M3/M4）原生运行**；要求 macOS 11+；解压后将 `DeepSeek Harness.app` 拖入「应用程序」。未签名构建：首次打开若提示"无法验证开发者/已损坏"，右键 App → 打开（一次即可），或执行 `xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"`。
+- **`dsh-gui-v1.0.42-win-x64.zip`**（Windows 64 位）— 最新版（**新增 MCP 目录插件**：设置 → 插件 → MCP，内置常用服务器目录一键启停、热挂载免重启；修复含中文/空格路径的插件加载崩溃）。如需官方 rc.5 稳定版可回退到 v1.0.17。
+- **`dsh-gui-v1.0.42-mac-universal.zip`**（macOS Universal，430 MB）— 最新版，**同时支持 Intel 芯片与 Apple 芯片（M1/M2/M3/M4）原生运行**；要求 macOS 11+；解压后将 `DeepSeek Harness.app` 拖入「应用程序」。未签名构建：首次打开若提示"无法验证开发者/已损坏"，右键 App → 打开（一次即可），或执行 `xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"`。
 
 ### 安装步骤
 
@@ -81,6 +81,13 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
+
+### v1.0.42（2026-08-23）
+
+- 🧩 **新增「MCP 目录」插件** — 设置 → 插件 → 新增「MCP」标签页：内置常用服务器目录（everything / memory / sequential-thinking / filesystem / github / brave-search / puppeteer / sqlite）与自定义服务器表单；一键启用/停用/改配，通过 `@deepseek-ai/dsh-mcp-client` **即时热挂载（免重启）**；配置存于 `~/.dsh/settings.yaml` 的 `mcp-catalog` 命名空间。模型侧工具名形如 `mcp__<服务名>__<工具名>`。
+- 🔧 **修复含中文/空格路径的插件加载崩溃** — cordis-plugin-loader 在 Windows 上把绝对路径插件名统一转换为 `file://` URL 后再走 ESM 导入，根治 `ERR_UNSUPPORTED_ESM_URL_SCHEME (protocol 'c:')`。
+- 🛡️ 客户端模块扫描器兼容自定义包：`dsh.client` 双面包的 `exports` 需显式列出 `./package.json` 子路径（否则解析被静默跳过）；扫描锚点为 profile 目录，跨层分发需双锚点放置（详见仓库 audit-notes）。
+- 🍎 **macOS Universal 同步更新**（`dsh-gui-v1.0.42-mac-universal.zip`，430 MB）— 与 Windows 版同功能；Intel + Apple 芯片原生（fat binary 已校验）；要求 macOS 11+；未签名。
 
 ### v1.0.41（2026-08-22）
 
