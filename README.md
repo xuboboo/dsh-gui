@@ -9,8 +9,8 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.42-win-x64.zip`**（Windows 64 位）— 最新版（**新增 MCP 目录插件**：设置 → 插件 → MCP，内置常用服务器目录一键启停、热挂载免重启；修复含中文/空格路径的插件加载崩溃）。如需官方 rc.5 稳定版可回退到 v1.0.17。
-- **`dsh-gui-v1.0.42-mac-universal.zip`**（macOS Universal，430 MB）— 最新版，**同时支持 Intel 芯片与 Apple 芯片（M1/M2/M3/M4）原生运行**；要求 macOS 11+；解压后将 `DeepSeek Harness.app` 拖入「应用程序」。未签名构建：首次打开若提示"无法验证开发者/已损坏"，右键 App → 打开（一次即可），或执行 `xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"`。
+- **`dsh-gui-v1.0.49-win-x64-asar.zip`**（Windows 自动升级 hotfix）— 最新版，修复旧版本自动升级后 `error: unknown option '--no-open'`、heal 被锁目录 `ENOTEMPTY`/`EPERM` 崩启动、`client-modules missed the module table`（客户端插件按内容自愈）、v1.0.47 的 heal 作用域崩溃，并**自动部署 MCP 设置页**（升级机/新装机开箱即用）；升级机下次启动自动自愈。**全新安装请用完整包 `dsh-gui-v1.0.49-win-x64.zip`**。如需官方 rc.5 稳定版可回退到 v1.0.17。
+- **`dsh-gui-v1.0.49-mac-universal.zip`**（macOS Universal）— 最新 mac 包，与 Windows 版同版本同功能（含 MCP 设置页自动部署、客户端插件自愈），**同时支持 Intel 芯片与 Apple 芯片（M1/M2/M3/M4）原生运行**；要求 macOS 11+；解压后将 `DeepSeek Harness.app` 拖入「应用程序」。未签名构建：首次打开若提示"无法验证开发者/已损坏"，右键 App → 打开（一次即可），或执行 `xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"`。
 
 ### 安装步骤
 
@@ -81,6 +81,23 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
+
+### v1.0.51（2026-09-02）
+
+- ⚡ **启动提速：运行时提前拉起，与 Electron 初始化重叠** — launcher 在模块加载阶段（app.whenReady 之前）就启动子运行时，其引导（模块加载 / profile heal / Loader 就绪）与 Electron 自身的 Chromium 初始化、菜单安装、启动页渲染并行，串行等待时间减少约 1~3 秒（实测本机运行时引导 2~5 秒：全新 profile 首启约 3 秒，已有 profile 约 4.5 秒；日志目录也提前建立，提前拉起的启动记录不再丢失）。
+- ⏳ **自动更新首查延后到启动 30 秒后**（原 8 秒）— 更新检查的 TLS 握手与 JSON 解析不再与运行时引导抢 CPU/网络，弱机启动更稳。
+- 💬 **启动页文案更诚实** — 移除「首次启动可能需要几秒钟」；首次启动（无 ~/.dsh/profiles）显示「首次启动需要初始化本地运行时（仅此一次）」。
+- 📝 修正文档中「首次启动约 1~2 分钟 / 1~3 分钟」的过时描述（seed junction 方案下本机实测数秒）。
+- 🧰 **打包工具修复：asar 补齐运行时点文件** — @electron/asar 的 glob 默认不匹配点文件，
+  `@earendil-works/pi-ai/dist/providers/data/.manifest.json`（all.js 引用）没进 asar → pi-ai 的 asar 副本内部是坏的，
+  平时靠 profile→seed 才能启动；一旦走 asar 解析（无 seed/seed 不完整）就 ERR_MODULE_NOT_FOUND。pack.mjs 现在补进
+  node_modules lib/dist 内的点文件（本轮仅 pi-ai 一个），asar 与 seed 一致、自足。
+- ⚠️ **解压工具提醒** — PowerShell Expand-Archive 解压完整包会静默丢 ~2.5 万个 seed 文件，
+  请用资源管理器 / 7-Zip / WinRAR 解压（README 已注明）。
+
+### v1.0.43（2026-08-24）
+
+- 🔧 **修复旧版本自动升级后启动崩溃 `error: unknown option '--no-open'`** — 自动更新只替换 `app.asar`、不替换 `dsh-profile-seed`；旧版写下的 `.dsh-heal-stamp.json` 让新版的「上次成功」自愈快路径**跳过版本校验**，profile 仍 junction 到旧 rc.5 seed，其 `@deepseek-ai/dsh-web-app` 运行时并不解析 `--no-open`（仅文档写了），于是新 launcher 传入的 `--no-open` 被判为未知选项 → 启动退出码 1。本次让 heal stamp 快路径同样做 `manifestsMatch` 版本校验，版本不一致时不再跳过：seed 落后则**从当前 asar 自带的 rc.2 `@deepseek-ai/*` 实拷贝**，升级机下次启动自动自愈，无需重装全量包。
 
 ### v1.0.42（2026-08-23）
 
