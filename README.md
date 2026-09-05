@@ -82,6 +82,10 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 
 ## 更新日志 / Changelog
 
+### v1.0.55（2026-09-05）
+
+- 🔁 **修复 v1.0.54「思考」修复在升级机上未生效（heal 新鲜度误判）** — 运行时插件树从 profile 解析，自动更新只换 app.asar 不换 seed；heal 的 `closureFresh` 对服务端包只比 package.json 的 name+version，而 `dsh-llm-pi-ai` 的包版本是上游 rc.2、各版之间相同，改的只是 lib/index.js 内容 → 旧 seed 被误判“新鲜”，升级后仍 junction 到没修复的旧 bundle。现给 `closureFresh` 增加**运行时入口字节比对**（对所有包通用，全部包入口合计约 4.8 MB，开销可忽略）：不一致即从 asar 物化真实副本。升级机首次启动自动物化修复版，之后恢复快路径；全新安装不受影响。
+
 ### v1.0.54（2026-09-05）
 
 - 💭 **自定义模型提供方「思考」按钮全量显示** — v1.0.53 及以前只有手工在模型配置里声明了 `reasoningEfforts` 的模型才显示「思考」选项，其它自定义模型（如 muse-spark）看不到。根因：`dsh-llm-pi-ai` 的 `resolveModelReasoning` 对手写、未声明 `reasoningEfforts` 且无内置目录同名条目的模型返回 `reasoning:false` → 模型选择器不渲染思考控制。现已把手写自定义模型默认视为支持 OpenAI 兼容推理（默认力度 low/medium/high），任意自定义模型提供方的模型都会出现「思考」按钮（默认「提供方默认」，不额外发参，主动选才发）；内置目录模型保持各自能力，显式 `reasoningEfforts:false` 仍可关闭，按模型声明的力度仍优先。升级后无需改任何配置。
