@@ -82,6 +82,10 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 
 ## 更新日志 / Changelog
 
+### v1.0.54（2026-09-05）
+
+- 💭 **自定义模型提供方「思考」按钮全量显示** — v1.0.53 及以前只有手工在模型配置里声明了 `reasoningEfforts` 的模型才显示「思考」选项，其它自定义模型（如 muse-spark）看不到。根因：`dsh-llm-pi-ai` 的 `resolveModelReasoning` 对手写、未声明 `reasoningEfforts` 且无内置目录同名条目的模型返回 `reasoning:false` → 模型选择器不渲染思考控制。现已把手写自定义模型默认视为支持 OpenAI 兼容推理（默认力度 low/medium/high），任意自定义模型提供方的模型都会出现「思考」按钮（默认「提供方默认」，不额外发参，主动选才发）；内置目录模型保持各自能力，显式 `reasoningEfforts:false` 仍可关闭，按模型声明的力度仍优先。升级后无需改任何配置。
+
 ### v1.0.53（2026-09-05）
 
 - 🪟 **修复升级/启动后长时间黑屏** — v1.0.52 把 `firstBoot` 误声明为当就绪 handler else 块内的块级 `let`，模块级函数 `createWindow()` 引用它时抛 `ReferenceError: firstBoot is not defined`，首次窗口创建失败、落到空窗口；4 秒看门狗只是强制显示一个没内容的空窗口，于是用户看到黑屏，直到运行时引导完成才有内容。已把 `firstBoot` 移到模块顶层声明，窗口一创建即显示品牌启动页（不黑屏），运行时就绪后再跳转到应用页。
