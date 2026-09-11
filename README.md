@@ -9,8 +9,8 @@
 
 前往 [Releases](https://github.com/xuboboo/dsh-gui/releases) 下载最新版本：
 
-- **`dsh-gui-v1.0.49-win-x64-asar.zip`**（Windows 自动升级 hotfix）— 最新版，修复旧版本自动升级后 `error: unknown option '--no-open'`、heal 被锁目录 `ENOTEMPTY`/`EPERM` 崩启动、`client-modules missed the module table`（客户端插件按内容自愈）、v1.0.47 的 heal 作用域崩溃，并**自动部署 MCP 设置页**（升级机/新装机开箱即用）；升级机下次启动自动自愈。**全新安装请用完整包 `dsh-gui-v1.0.49-win-x64.zip`**。如需官方 rc.5 稳定版可回退到 v1.0.17。
-- **`dsh-gui-v1.0.49-mac-universal.zip`**（macOS Universal）— 最新 mac 包，与 Windows 版同版本同功能（含 MCP 设置页自动部署、客户端插件自愈），**同时支持 Intel 芯片与 Apple 芯片（M1/M2/M3/M4）原生运行**；要求 macOS 11+；解压后将 `DeepSeek Harness.app` 拖入「应用程序」。未签名构建：首次打开若提示"无法验证开发者/已损坏"，右键 App → 打开（一次即可），或执行 `xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"`。
+- **`dsh-gui-v1.1.0-win-x64-asar.zip`**（Windows 自动升级包）— 最新版：底层升级到官方 **0.1.5-rc.2**（侧边栏多标签/文件预览/文件交付、通用文件上传、DeepSeek-V41-Flash、会话格式 V3 自动迁移、浏览器认证围栏、Inspector 等），升级机替换 asar 后下次启动自动自愈。**全新安装请用完整包 `dsh-gui-v1.1.0-win-x64.zip`**。
+- **`dsh-gui-v1.0.49-win-x64-asar.zip`**（旧底座 rc.2 的最终 hotfix，存档）— v1.0.49 时代的自动升级修复；新用户请直接用 v1.1.0。
 
 ### 安装步骤
 
@@ -81,6 +81,17 @@ A：关注本仓库 Releases，下载新版 zip 解压覆盖即可（保留 `%US
 - 🌗 **浅色 / 深色双主题** — 跟随系统或手动切换，两套配色均对齐品牌
 
 ## 更新日志 / Changelog
+
+### v1.1.0（2026-09-12）
+
+- ⬆️ **底层升级到官方 0.1.5-rc.2**（`@deepseek-ai/*` 全家桶从 0.1.1-rc.2 → 0.1.5-rc.2）。新增：右侧 Sidebar 多标签/分栏/全屏与 Markdown、代码、HTML、PDF、图片预览；模型显式交付文件并在 Sidebar 预览/定位；Web 通用文件任意类型上传（图片+文件混排、后台上传/取消/续显）；DeepSeek-V41-Flash 新模型并作为新会话默认；可继续子代理消息排队/编辑/删除/Steer；动态修改系统提示词不破坏 KV Cache；出站请求遵循 HTTP(S)_PROXY/ALL_PROXY/NO_PROXY；会话流折叠过程内容、正文字号调节、回合导航；回答末尾 token 用量摘要；Inspector 与 Web Preview 实验特性；会话格式升级 V3（旧会话自动迁移，升级后不支持降级读取）。
+- 🔐 **官方新增浏览器认证围栏（升级适配）** — 0.1.5 起本地 Web UI 需要进程启动令牌：就绪行携带 `?token=`，首页请求换取会话 Cookie。桌面启动器已适配：接受并保留 token 查询参数完成认证，无效令牌一律 401。
+- 🩹 **heal（模块回退自愈）整体移植到官方新架构** — 官方 0.1.5 重写了 fallback（pkg 单文件场景用 ESM proxy、普通 Node 直接 symlink 进安装树）。桌面 asar 场景下 symlink 指向压缩包内部无法被 ESM 解析（历史启动崩溃根源），本次把 dsh-gui 的自愈逻辑在新架构源码层重写：优先 junction 到随包 seed（字节新鲜度校验：manifest + 运行时入口 + 客户端 bundle 三重字节比对），失配则物化真实副本，逐包容错、完成后写 stamp；升级机首次启动自动重建，不再需要全量重装。
+- 🧩 **GUI 插件全部适配 0.1.5 API** — Token 用量统计插件改为官方 workspace 包并用新客户端 API 重写（`dsh-client-runtime` 已并入 cordis 上下文、`connection.api` 改为 `remote.session` wire 面、快照 store 改用 `dsh-client-store`）；MCP 目录插件与 reasoning-autopilot 适配新 `dsh-settings`（命名空间注册改纯字符串，`settingsScope` 服务兼容）；自定义模型「思考」默认档位逻辑重落在 pi-ai 源码层。
+- 📁 **目录选择器 GUI 原生对话框补丁随新结构迁移** — 宿主侧 pick 动作新家在 `dsh-api-workspace-controller`，原生选择器在 `dsh-host-directory-picker-native`，两处均保留「Electron 原生对话框优先、koffi worker 兜底」的顺序。
+- 🧱 **构建链升级：闭包感知拍平** — 依赖树改为从安装锚点（`@deepseek-ai/dsh`）按 pnpm 真实解析结果 BFS 收集（deps+peers+optional，最近优先写入平铺顶层），同名包版本分叉时自动为后到消费者生成嵌套副本（如 compression 的 negotiator@0.6、skill-filesystem 的 chokidar@5、negotiator@1.1 的 content-type@2）；完整包体积从 ~365 MB 降到 ~250 MB。
+- 🧹 **依赖瘦身（新版树）** — 剔除 codex/claude 子代理 CLI（~586 MB）、构建工具链（rolldown/oxlint/esbuild/lefthook 等）、打包器（electron-winstaller/app-builder-lib）、已被内联进前端 bundle 的运行库（pdfjs-dist/mermaid/cytoscape/@napi-rs canvas 等，均经运行时 require 扫描确认不会被动态加载）。shiki/katex/react-dom 等确认运行时需要，全部保留。
+- 🐝 本机已知问题（与升级无关）：MCP 设置里通过 npx 启动的服务器因本机 npx 缓存损坏（缺 ajv）无法启动，属 npm 缓存问题，清理 `%LOCALAPPDATA%\npm-cache\_npx` 或重装对应服务器可解。
 
 ### v1.0.55（2026-09-05）
 
