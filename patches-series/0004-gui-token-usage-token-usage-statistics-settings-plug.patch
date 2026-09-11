@@ -1,0 +1,1081 @@
+From d0228ca51263c31c6225d85195121f906a8e180f Mon Sep 17 00:00:00 2001
+From: dsh-gui <dsh-gui@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 06:57:51 +0800
+Subject: [PATCH 4/6] gui(token-usage): token usage statistics settings plugin
+ (0.1.5 APIs)
+
+settings.section page aggregated from the session.list projection column:
+totals, trailing daily chart, top-sessions table, clear/restore stats.
+Client face bundles shiki-free React with dsh-client-store externals.
+---
+ .../ui-settings-token-usage/package.json      |  73 ++++
+ .../src/client/HomepageSection.tsx            |  41 +++
+ .../src/client/UsageSection.tsx               | 291 +++++++++++++++
+ .../src/client/index.ts                       | 111 ++++++
+ .../src/client/locales.ts                     |  84 +++++
+ .../src/client/store.ts                       | 333 ++++++++++++++++++
+ .../ui-settings-token-usage/src/index.ts      |   4 +
+ .../ui-settings-token-usage/src/invariant.ts  |  13 +
+ .../ui-settings-token-usage/tsconfig.json     |  33 ++
+ .../ui-settings-token-usage/tsdown.config.ts  |   3 +
+ 10 files changed, 986 insertions(+)
+ create mode 100644 packages/client/ui-settings-token-usage/package.json
+ create mode 100644 packages/client/ui-settings-token-usage/src/client/HomepageSection.tsx
+ create mode 100644 packages/client/ui-settings-token-usage/src/client/UsageSection.tsx
+ create mode 100644 packages/client/ui-settings-token-usage/src/client/index.ts
+ create mode 100644 packages/client/ui-settings-token-usage/src/client/locales.ts
+ create mode 100644 packages/client/ui-settings-token-usage/src/client/store.ts
+ create mode 100644 packages/client/ui-settings-token-usage/src/index.ts
+ create mode 100644 packages/client/ui-settings-token-usage/src/invariant.ts
+ create mode 100644 packages/client/ui-settings-token-usage/tsconfig.json
+ create mode 100644 packages/client/ui-settings-token-usage/tsdown.config.ts
+
+diff --git a/packages/client/ui-settings-token-usage/package.json b/packages/client/ui-settings-token-usage/package.json
+new file mode 100644
+index 0000000..a9df7dc
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/package.json
+@@ -0,0 +1,73 @@
++{
++  "name": "@deepseek-ai/dsh-client-ui-settings-token-usage",
++  "description": "Token usage statistics settings section: aggregated provider-reported usage across all local sessions",
++  "version": "0.1.5-rc.2",
++  "publishConfig": {
++    "access": "public"
++  },
++  "repository": {
++    "type": "git",
++    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
++    "directory": "packages/client/ui-settings-token-usage"
++  },
++  "type": "module",
++  "main": "lib/index.js",
++  "types": "lib/types/index.d.ts",
++  "exports": {
++    ".": {
++      "types": "./lib/types/index.d.ts",
++      "default": "./lib/index.js"
++    },
++    "./invariant": {
++      "types": "./lib/types/invariant.d.ts",
++      "default": "./lib/invariant.js"
++    },
++    "./client": {
++      "types": "./lib/types/client/index.d.ts",
++      "default": "./lib/client.js"
++    },
++    "./src/*": "./src/*",
++    "./package.json": "./package.json"
++  },
++  "dsh": {
++    "client": {
++      "platform": "web",
++      "inject": [
++        "@deepseek-ai/dsh-api-remotes",
++        "@deepseek-ai/dsh-client-ui-settings",
++        "@deepseek-ai/dsh-client-locale"
++      ]
++    }
++  },
++  "scripts": {
++    "bundle": "tsdown",
++    "watch": "tsdown --watch"
++  },
++  "license": "MIT",
++  "peerDependencies": {
++    "@deepseek-ai/cordis": "workspace:^",
++    "@deepseek-ai/dsh-api-remotes": "workspace:^",
++    "@deepseek-ai/dsh-client-locale": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
++    "react": "^18.2.0"
++  },
++  "devDependencies": {
++    "@deepseek-ai/cordis": "workspace:^",
++    "@deepseek-ai/dsh-api-remotes": "workspace:^",
++    "@deepseek-ai/dsh-client-locale": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
++    "@deepseek-ai/dsh-invariants": "workspace:^",
++    "@types/react": "~18.3.1",
++    "react": "^18.2.0"
++  },
++  "files": [
++    "lib/index.js",
++    "lib/invariant.js",
++    "lib/client.js",
++    "lib/types/**/*.d.ts"
++  ]
++}
+diff --git a/packages/client/ui-settings-token-usage/src/client/HomepageSection.tsx b/packages/client/ui-settings-token-usage/src/client/HomepageSection.tsx
+new file mode 100644
+index 0000000..7e3fe11
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/src/client/HomepageSection.tsx
+@@ -0,0 +1,41 @@
++/**
++ * Project homepage settings section: a pointer to the dsh-gui project
++ * (GitHub repository + releases). Links open through the host's window-open
++ * handler, which routes http(s) targets to the system browser.
++ */
++
++import type { UsageKey } from './locales.ts'
++
++/** Injected props the settings shell supplies to this section. */
++export interface HomepageSectionInjected {
++  t: (key: UsageKey) => string
++}
++
++/** Section props: the injected face, nothing else. */
++export type HomepageSectionProps = HomepageSectionInjected
++
++const PROJECT_URL = 'https://github.com/xuboboo/dsh-gui'
++const RELEASES_URL = 'https://github.com/xuboboo/dsh-gui/releases'
++
++/** The settings section body: project intro + links. */
++export function HomepageSection({ t }: HomepageSectionProps): JSX.Element {
++  const linkStyle = {
++    color: 'var(--dsw-static-deepseek-500, #4d6bfe)',
++    textDecoration: 'none',
++    fontWeight: 600,
++  }
++  return (
++    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 2px 12px' }}>
++      <div style={{ fontSize: 14, opacity: 0.75, lineHeight: 1.7 }}>{t('homepageIntro')}</div>
++      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
++        <a href={PROJECT_URL} target="_blank" rel="noopener noreferrer" style={linkStyle}>
++          {t('homepageLink')} ↗
++        </a>
++        <a href={RELEASES_URL} target="_blank" rel="noopener noreferrer" style={linkStyle}>
++          {t('homepageReleases')} ↗
++        </a>
++      </div>
++      <div style={{ fontSize: 12, opacity: 0.55, lineHeight: 1.6 }}>{t('homepageNote')}</div>
++    </div>
++  )
++}
+diff --git a/packages/client/ui-settings-token-usage/src/client/UsageSection.tsx b/packages/client/ui-settings-token-usage/src/client/UsageSection.tsx
+new file mode 100644
+index 0000000..02ad94f
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/src/client/UsageSection.tsx
+@@ -0,0 +1,291 @@
++/**
++ * Token usage statistics settings section: summary cards, a trailing daily
++ * bar chart (pure CSS, no chart library), and a top-sessions table — all
++ * aggregated from the session.list projection column.
++ */
++
++import { useEffect, useMemo, useState } from 'react'
++import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
++import { clearStats, DAYS, restoreStats, UsageStatsStore, type SessionListFetch, type UsageStatsState, type UsageSessionRow, type UsageDayBucket } from './store.ts'
++import type { UsageKey } from './locales.ts'
++
++/** React hook bound to a snapshot store (replaces removed @deepseek-ai/dsh-client-web-react type). */
++export type SnapshotSelectorHook<S> = <T>(selector: (state: S) => T, equality?: (a: T, b: T) => boolean) => T
++
++/** Injected props the settings shell supplies to this section. */
++export interface UsageSectionInjected {
++  controller: UsageStatsStore
++  useSnapshot: SnapshotSelectorHook<UsageStatsState>
++  fetchRows: SessionListFetch
++  t: (key: UsageKey) => string
++}
++
++/** Section props: the injected face, nothing else. */
++export type UsageSectionProps = UsageSectionInjected
++
++/** Format a token count compactly (1.2k / 3.4M). */
++function formatTokens(value: number): string {
++  if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + 'M'
++  if (value >= 10_000) return Math.round(value / 1_000) + 'k'
++  if (value >= 1_000) return (value / 1_000).toFixed(1) + 'k'
++  return String(value)
++}
++
++/** Format a duration compactly. */
++function formatDuration(ms: number): string {
++  if (ms < 1_000) return ms + ' ms'
++  if (ms < 60_000) return (ms / 1_000).toFixed(1) + ' s'
++  return Math.round(ms / 60_000) + ' min'
++}
++
++/** MM-DD view of an ISO day key. */
++function dayLabel(day: string): string {
++  return day.slice(5)
++}
++
++/** YYYY-MM-DD view of an epoch-ms timestamp (local time). */
++function dateLabel(time: number): string {
++  const date = new Date(time)
++  const month = String(date.getMonth() + 1).padStart(2, '0')
++  const day = String(date.getDate()).padStart(2, '0')
++  return `${date.getFullYear()}-${month}-${day}`
++}
++
++/** Summary card row. */
++function Card({ label, value, hint }: { label: string; value: string; hint?: string }): JSX.Element {
++  return (
++    <div style={{
++      flex: '1 1 120px',
++      minWidth: 120,
++      padding: '10px 12px',
++      borderRadius: 8,
++      border: '1px solid var(--dsw-static-border-subtle, rgba(127,140,175,0.22))',
++      background: 'var(--dsw-static-surface-raised, rgba(127,140,175,0.08))',
++    }}>
++      <div style={{ fontSize: 12, opacity: 0.65 }}>{label}</div>
++      <div style={{ fontSize: 17, fontWeight: 600, marginTop: 2 }} title={hint}>{value}</div>
++    </div>
++  )
++}
++
++/** One day column in the stacked bar chart. */
++function DayBar({ bucket, index, max, showLabel }: {
++  bucket: UsageDayBucket
++  index: number
++  max: number
++  showLabel: boolean
++}): JSX.Element {
++  const inputHeight = max > 0 ? Math.max((bucket.input / max) * 100, bucket.input > 0 ? 2 : 0) : 0
++  const outputHeight = max > 0 ? Math.max((bucket.output / max) * 100, bucket.output > 0 ? 2 : 0) : 0
++  void index
++  return (
++    <div style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
++      <div style={{
++        height: 96,
++        width: '100%',
++        maxWidth: 22,
++        display: 'flex',
++        flexDirection: 'column-reverse',
++        justifyContent: 'flex-start',
++        background: 'var(--dsw-static-surface-raised, rgba(127,140,175,0.06))',
++        borderRadius: 4,
++        overflow: 'hidden',
++        position: 'relative',
++      }} title={`${bucket.day} — ${formatTokens(bucket.input)} in / ${formatTokens(bucket.output)} out`}>
++        <div style={{
++          height: outputHeight + '%',
++          background: 'var(--dsw-static-deepseek-400, #7e8ffe)',
++          opacity: 0.92,
++        }} />
++        <div style={{
++          height: inputHeight + '%',
++          background: 'var(--dsw-static-deepseek-600, #3750dc)',
++        }} />
++      </div>
++      <div style={{ fontSize: 10, opacity: showLabel ? 0.8 : 0.25 }}>{dayLabel(bucket.day)}</div>
++    </div>
++  )
++}
++
++/** Top-sessions table row. */
++function SessionRow({ row }: { row: UsageSessionRow }): JSX.Element {
++  const total = row.input + row.output + row.cacheRead + row.cacheWrite
++  return (
++    <tr>
++      <td style={{ padding: '6px 8px', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.title}>
++        {row.title ?? row.sessionId.slice(0, 8)}
++      </td>
++      <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', opacity: 0.7 }}>{dayLabel(new Date(row.updatedAt).toISOString().slice(0, 10))}</td>
++      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatTokens(row.input)}</td>
++      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatTokens(row.output)}</td>
++      <td style={{ padding: '6px 8px', textAlign: 'right', opacity: 0.75 }}>{formatTokens(row.cacheRead + row.cacheWrite)}</td>
++      <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{formatTokens(total)}</td>
++    </tr>
++  )
++}
++
++/**
++ * The settings section body. Loads once on mount; the Refresh button and the
++ * connection-reset invalidation refetch after the first load.
++ */
++export function UsageSection({ controller, useSnapshot, t }: UsageSectionProps): JSX.Element {
++  const snapshot = useSnapshot(state => state)
++  const [rangeDays, setRangeDays] = useState<7 | 30>(7)
++  const [confirmOpen, setConfirmOpen] = useState(false)
++
++  useEffect(() => {
++    void controller.load()
++  }, [controller])
++
++  const stats = snapshot.stats
++  const visibleDays = useMemo(() => {
++    if (stats === null) return []
++    return stats.byDay.slice(DAYS - rangeDays)
++  }, [stats, rangeDays])
++  const maxDaily = useMemo(() => {
++    let max = 0
++    for (const bucket of visibleDays) {
++      const total = bucket.input + bucket.output
++      if (total > max) max = total
++    }
++    return max
++  }, [visibleDays])
++
++  return (
++    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px 12px' }}>
++      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
++        <div style={{ flex: '1 1 auto', fontSize: 14, opacity: 0.75, minWidth: 0 }}>{t('intro')}</div>
++        <div style={{ display: 'flex', flexShrink: 0, gap: 8, alignItems: 'center' }}>
++          {snapshot.resetAt !== null && (
++            <span style={{
++              fontSize: 12,
++              padding: '3px 8px',
++              borderRadius: 6,
++              opacity: 0.85,
++              background: 'var(--dsw-static-surface-raised, rgba(127,140,175,0.10))',
++              border: '1px solid var(--dsw-static-border-subtle, rgba(127,140,175,0.22))',
++              whiteSpace: 'nowrap',
++            }}>
++              {t('statsSince').replace('{date}', dateLabel(snapshot.resetAt))}
++            </span>
++          )}
++          {snapshot.resetAt !== null
++            ? (
++              <Button onClick={() => { restoreStats(controller) }} disabled={snapshot.status === 'loading'}>
++                {t('restoreStats')}
++              </Button>
++            )
++            : (
++              <Button variant="outline" onClick={() => { setConfirmOpen(true) }} disabled={snapshot.status === 'loading'}>
++                {t('clearStats')}
++              </Button>
++            )}
++          <Button onClick={() => { void controller.load() }} disabled={snapshot.status === 'loading'}>
++            {t('refresh')}
++          </Button>
++        </div>
++      </div>
++
++      <Modal
++        open={confirmOpen}
++        onClose={() => { setConfirmOpen(false) }}
++        title={t('clearConfirmTitle')}
++        closeLabel={t('cancel')}
++        description={t('clearConfirmBody')}
++        footer={(
++          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
++            <Button onClick={() => { setConfirmOpen(false) }}>{t('cancel')}</Button>
++            <Button variant="primary" onClick={() => {
++              setConfirmOpen(false)
++              clearStats(controller)
++            }}>{t('clearConfirm')}</Button>
++          </div>
++        )}
++      />
++
++      {snapshot.status === 'error' && (
++        <div style={{
++          padding: '10px 12px',
++          borderRadius: 8,
++          border: '1px solid var(--dsw-static-danger-500, rgba(224,86,86,0.4))',
++          color: 'var(--dsw-static-danger-500, #e05656)',
++          fontSize: 13,
++        }}>
++          {t('loadFailed')}: {snapshot.error}
++        </div>
++      )}
++
++      {stats === null && snapshot.status !== 'error' && snapshot.status !== 'loading' && (
++        <div style={{ padding: '26px 12px', textAlign: 'center', opacity: 0.6, fontSize: 13 }}>{t('noData')}</div>
++      )}
++
++      {stats !== null && (
++        <>
++          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
++            <Card label={t('totalTokens')} value={formatTokens(stats.totals.input + stats.totals.output)} hint={`in ${formatTokens(stats.totals.input)} + out ${formatTokens(stats.totals.output)}`} />
++            <Card label={t('inputTokens')} value={formatTokens(stats.totals.input)} />
++            <Card label={t('outputTokens')} value={formatTokens(stats.totals.output)} />
++            <Card label={t('cacheTokens')} value={formatTokens(stats.totals.cacheRead + stats.totals.cacheWrite)} hint={`read ${formatTokens(stats.totals.cacheRead)} / write ${formatTokens(stats.totals.cacheWrite)}`} />
++            <Card label={t('sessions')} value={String(stats.totals.sessions)} />
++            <Card label={t('llmTime')} value={formatDuration(stats.llmMs)} />
++          </div>
++
++          <div style={{
++            padding: '12px 14px',
++            borderRadius: 8,
++            border: '1px solid var(--dsw-static-border-subtle, rgba(127,140,175,0.22))',
++          }}>
++            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
++              <div style={{ fontSize: 13, fontWeight: 600 }}>{t('daily')}</div>
++              <div style={{ display: 'flex', gap: 6 }}>
++                {([7, 30] as const).map(days => (
++                  <Button key={days} size="sm" variant={rangeDays === days ? 'primary' : 'ghost'}
++                    onClick={() => { setRangeDays(days) }}>
++                    {days === 7 ? t('range7') : t('range30')}
++                  </Button>
++                ))}
++              </div>
++            </div>
++            {maxDaily === 0
++              ? <div style={{ padding: '18px 0', textAlign: 'center', opacity: 0.55, fontSize: 13 }}>{t('noData')}</div>
++              : (
++                <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end' }}>
++                  {visibleDays.map((bucket, index) => (
++                    <DayBar key={bucket.day} bucket={bucket} index={index} max={maxDaily}
++                      showLabel={index % 5 === 0 || index === visibleDays.length - 1} />
++                  ))}
++                </div>
++              )}
++          </div>
++
++          {stats.topSessions.length > 0 && (
++            <div style={{
++              padding: '12px 14px',
++              borderRadius: 8,
++              border: '1px solid var(--dsw-static-border-subtle, rgba(127,140,175,0.22))',
++            }}>
++              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{t('topSessions')}</div>
++              <div style={{ overflowX: 'auto' }}>
++                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
++                  <thead>
++                    <tr style={{ opacity: 0.65 }}>
++                      <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500 }}>{t('session')}</th>
++                      <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500 }}>{t('updated')}</th>
++                      <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>{t('inputTokens')}</th>
++                      <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>{t('outputTokens')}</th>
++                      <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>{t('cacheTokens')}</th>
++                      <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 500 }}>{t('total')}</th>
++                    </tr>
++                  </thead>
++                  <tbody>
++                    {stats.topSessions.map(row => <SessionRow key={row.sessionId} row={row} />)}
++                  </tbody>
++                </table>
++              </div>
++            </div>
++          )}
++        </>
++      )}
++    </div>
++  )
++}
+diff --git a/packages/client/ui-settings-token-usage/src/client/index.ts b/packages/client/ui-settings-token-usage/src/client/index.ts
+new file mode 100644
+index 0000000..52fa2b7
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/src/client/index.ts
+@@ -0,0 +1,111 @@
++/**
++ * Token usage statistics settings plugin, browser half. It registers the
++ * Usage page (settings.section entry 'usage'), loading its data from the
++ * session.list projection column on demand.
++ */
++import { useSyncExternalStore } from 'react'
++import type { Context as ClientContext } from '@deepseek-ai/cordis'
++// Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry).
++import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
++// Type-only: pulls the locale plugin's Context merge (ctx.locale).
++import type {} from '@deepseek-ai/dsh-client-locale/client'
++// Type-only: pulls the ctx.slots Context merge (the slot registry service).
++import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
++// Type-only: pulls the ctx.remote merge into this program.
++import type {} from '@deepseek-ai/dsh-api-remotes/client'
++import { UsageSection } from './UsageSection.tsx'
++import type { UsageSectionInjected } from './UsageSection.tsx'
++import { HomepageSection } from './HomepageSection.tsx'
++import type { HomepageSectionInjected } from './HomepageSection.tsx'
++import { refreshIfLoaded, UsageStatsStore, type SessionListRow } from './store.ts'
++import { en, zh, type UsageKey } from './locales.ts'
++
++export type { UsageSectionInjected, UsageSectionProps } from './UsageSection.tsx'
++export type { UsageKey } from './locales.ts'
++
++declare module '@deepseek-ai/dsh-client-ui-slots' {
++  interface LocaleNamespaceMap {
++    /** The Token usage statistics page copy. */
++    'settings.usage': UsageKey
++  }
++}
++
++/** Dictionary namespace owned by this plugin. */
++const NS = 'settings.usage'
++
++/**
++ * Required services (cordis fiber inject). The target slot is declared by
++ * ui-settings' apply, whose activation order relative to this one is NOT
++ * constrained; registration depends on each slot through `slots.inject()`.
++ * `remote.session` pulls the session-list wire namespace this page reads.
++ */
++export const inject = ['slots', 'locale', 'remote', 'remote.session']
++
++/**
++ * Register the Usage section once the `settings.section` declaration is on
++ * the ledger, wire its store to the session-list remote, and refetch on
++ * connection resets once the page has loaded.
++ * @param ctx - client root context.
++ */
++/** Bind a snapshot store to a React hook (replaces removed @deepseek-ai/dsh-client-web-react). */
++function bindSnapshotSelector<T>(w: { subscribe(fn: () => void): () => void; getSnapshot(): T }) {
++  const subscribe = (fn: () => void) => w.subscribe(fn)
++  const getSnapshot = () => w.getSnapshot()
++  return function useSelector<S>(selector: (state: T) => S): S {
++    const snapshot = useSyncExternalStore(subscribe, getSnapshot)
++    return selector(snapshot)
++  }
++}
++
++export function apply(ctx: ClientContext): void {
++  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-token-usage: copy dictionaries')
++
++  const remote = ctx.remote as unknown as {
++    session: { list(request: {}): Promise<{ ok: boolean; error?: { message: string }; value?: { items: readonly SessionListRow[] } }> }
++  }
++  const controller = new UsageStatsStore(async () => {
++    const result = await remote.session.list({})
++    if (!result.ok) throw new Error(result.error?.message ?? 'session.list failed')
++    return { items: result.value?.items ?? [] }
++  })
++  const useSnapshot = bindSnapshotSelector(controller.store)
++  // Registration-time text (the nav label thunk) and the inject face share
++  // one bound translate; copy freshness rides the locale revision.
++  const t = ctx.locale.bind(NS) as UsageSectionInjected['t']
++  const injected = (): UsageSectionInjected => ({
++    controller,
++    useSnapshot,
++    fetchRows: async () => {
++      const result = await remote.session.list({})
++      if (!result.ok) throw new Error(result.error?.message ?? 'session.list failed')
++      return { items: result.value?.items ?? [] }
++    },
++    t,
++  })
++  const homepageInjected = (): HomepageSectionInjected => ({ t })
++
++  // Pushed invalidations converge an open page without polling: a connection
++  // reset (host restart / reconnect) refetches once the page loaded.
++  ctx.effect(() => {
++    const refresh = (): void => { refreshIfLoaded(controller) }
++    const disposers = [
++      ctx.on('connection/reset', refresh),
++    ]
++    return () => { for (const dispose of disposers) dispose() }
++  }, 'ui-settings-token-usage: pushed invalidations')
++
++  ctx.slots.inject('settings.section', () => ctx.slots.register({
++    name: 'settings.section',
++    id: 'usage',
++    order: 30,
++    label: () => t('nav'),
++    inject: injected,
++  }, UsageSection))
++  ctx.slots.inject('settings.section', () => ctx.slots.register({
++    name: 'settings.section',
++    id: 'homepage',
++    order: 90,
++    label: () => t('homepageNav'),
++    inject: homepageInjected,
++  }, HomepageSection))
++}
+diff --git a/packages/client/ui-settings-token-usage/src/client/locales.ts b/packages/client/ui-settings-token-usage/src/client/locales.ts
+new file mode 100644
+index 0000000..32b77f9
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/src/client/locales.ts
+@@ -0,0 +1,84 @@
++/** Copy dictionaries for the Token usage statistics settings section. */
++
++/** English strings (the key-set source of truth for this pair). */
++export const en = {
++  nav: 'Usage',
++  title: 'Token usage',
++  intro: 'Provider-reported token usage aggregated across all local sessions.',
++  refresh: 'Refresh',
++  totalTokens: 'Total tokens',
++  inputTokens: 'Input',
++  outputTokens: 'Output',
++  cacheTokens: 'Cache',
++  cacheRead: 'Cache read',
++  cacheWrite: 'Cache write',
++  sessions: 'Sessions',
++  llmTime: 'LLM time',
++  decodeTokens: 'Decoded tokens',
++  daily: 'Daily usage',
++  range7: 'Last 7 days',
++  range30: 'Last 30 days',
++  topSessions: 'Top sessions by usage',
++  session: 'Session',
++  updated: 'Last activity',
++  total: 'Total',
++  turns: 'Turns',
++  noData: 'No usage data yet. Start a conversation and provider-reported usage will show up here.',
++  loadFailed: 'Loading usage statistics failed',
++  retry: 'Retry',
++  clearStats: 'Clear stats',
++  restoreStats: 'Restore full stats',
++  clearConfirmTitle: 'Clear usage stats?',
++  clearConfirmBody: 'Only usage after this moment will be counted. No sessions are deleted, and full stats can be restored anytime.',
++  clearConfirm: 'Clear',
++  cancel: 'Cancel',
++  statsSince: 'Counting since {date}',
++  homepageNav: 'Project',
++  homepageIntro: 'dsh-gui is a third-party desktop client for DeepSeek Harness (unofficial): native window, branded theme and splash, startup crash fixes, and extra features such as token usage statistics.',
++  homepageLink: 'View project on GitHub',
++  homepageReleases: 'Downloads & releases',
++  homepageNote: 'Third-party, unofficial — not affiliated with DeepSeek.',
++}
++
++/** Simplified Chinese strings, paired with {@link en} key-for-key. */
++export const zh = {
++  nav: '用量统计',
++  title: 'Token 用量统计',
++  intro: '基于本机全部会话的提供商上报用量汇总（输入 / 输出 / 缓存 Token）。',
++  refresh: '刷新',
++  totalTokens: '总 Token',
++  inputTokens: '输入',
++  outputTokens: '输出',
++  cacheTokens: '缓存',
++  cacheRead: '缓存读取',
++  cacheWrite: '缓存写入',
++  sessions: '会话数',
++  llmTime: 'LLM 耗时',
++  decodeTokens: '解码 Token',
++  daily: '每日用量',
++  range7: '近 7 天',
++  range30: '近 30 天',
++  topSessions: '会话用量排行',
++  session: '会话',
++  updated: '最近活动',
++  total: '合计',
++  turns: '轮次',
++  noData: '暂无用量数据。开始对话后，这里会展示 Token 使用统计。',
++  loadFailed: '加载用量统计失败',
++  retry: '重试',
++  clearStats: '清空统计',
++  restoreStats: '恢复完整统计',
++  clearConfirmTitle: '清空用量统计？',
++  clearConfirmBody: '清空后只统计此刻之后的会话用量，不会删除任何会话记录，可随时恢复完整统计。',
++  clearConfirm: '清空',
++  cancel: '取消',
++  statsSince: '统计自 {date} 起',
++  homepageNav: '项目主页',
++  homepageIntro: 'dsh-gui 是 DeepSeek Harness 的第三方桌面客户端（非官方）：原生窗口、品牌主题与启动动画、启动崩溃修复，以及 Token 用量统计等增强功能。',
++  homepageLink: '在 GitHub 查看项目',
++  homepageReleases: '下载与更新（Releases）',
++  homepageNote: '第三方非官方项目，与 DeepSeek 官方无关。',
++}
++
++/** Key set of the pair; locale binding types dictionary lookups against it. */
++export type UsageKey = keyof typeof en
+diff --git a/packages/client/ui-settings-token-usage/src/client/store.ts b/packages/client/ui-settings-token-usage/src/client/store.ts
+new file mode 100644
+index 0000000..58ca7c7
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/src/client/store.ts
+@@ -0,0 +1,333 @@
++/**
++ * Token usage statistics page store: one snapshot aggregated client-side from
++ * the `session.list` projection column (the same zero-log-load baseline the
++ * sidebar lists with). The host stays the single fact source — the page never
++ * reads session files itself.
++ */
++
++import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
++import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
++
++/**
++ * Structural shape of one session.list wire row (dsh-gui: kept local so the
++ * page depends only on the projection values it actually reads).
++ */
++export interface SessionListRow {
++  sessionId: string
++  updatedAt: number
++  blank: boolean
++  projections?: { values?: Record<string, unknown> }
++}
++
++/** Wire face slice this page needs: one session-list fetch. */
++export type SessionListFetch = () => Promise<{ items: readonly SessionListRow[] }>
++
++/** Provider-reported cumulative usage buckets (mirror of the token-meter projection). */
++export interface TokenUsageProjection {
++  uncachedInputTokens: number
++  outputTokens: number
++  cacheReadTokens: number
++  cacheWriteTokens: number
++}
++
++/** One aggregated session row for the ranking table. */
++export interface UsageSessionRow {
++  sessionId: string
++  title: string | undefined
++  updatedAt: number
++  input: number
++  output: number
++  cacheRead: number
++  cacheWrite: number
++  turns: number
++  llmMs: number
++}
++
++/** One day bucket in the daily series (local calendar days). */
++export interface UsageDayBucket {
++  /** ISO calendar day, e.g. `2026-08-15`. */
++  day: string
++  input: number
++  output: number
++  cacheRead: number
++  cacheWrite: number
++  sessions: number
++}
++
++/** Fully aggregated statistics view. */
++export interface UsageStats {
++  totals: {
++    input: number
++    output: number
++    cacheRead: number
++    cacheWrite: number
++    /** Sessions reporting any provider usage. */
++    sessions: number
++  }
++  llmMs: number
++  decodeTokens: number
++  turns: number
++  /** Daily series over the trailing window ending today (window length = DAYS). */
++  byDay: readonly UsageDayBucket[]
++  /** Sessions sorted by total tokens descending, capped at TOP_LIMIT. */
++  topSessions: readonly UsageSessionRow[]
++}
++
++/** Page snapshot. */
++export interface UsageStatsState {
++  status: 'idle' | 'loading' | 'ready' | 'error'
++  /** Whole-load failure text. */
++  error: string | null
++  stats: UsageStats | null
++  /** Wall-clock time of the last successful load, ms since epoch. */
++  refreshedAt: number | null
++  /** Stats start marker: sessions updated before this time are excluded; null = full history. */
++  resetAt: number | null
++}
++
++/** Trailing daily-window length (local days) the aggregation keeps. */
++export const DAYS = 30
++/** localStorage key holding the stats start marker (ms epoch, or absent for full history). */
++export const RESET_KEY = 'dsh.usage.resetAt'
++
++/** Read the persisted stats start marker; storage failures degrade to full history. */
++export function readResetAt(): number | null {
++  try {
++    const raw = localStorage.getItem(RESET_KEY)
++    if (raw === null) return null
++    const value = Number(raw)
++    return Number.isFinite(value) && value > 0 ? value : null
++  } catch {
++    return null
++  }
++}
++
++/** Persist (or clear) the stats start marker; storage failures are silent no-ops. */
++export function writeResetAt(value: number | null): void {
++  try {
++    if (value === null) localStorage.removeItem(RESET_KEY)
++    else localStorage.setItem(RESET_KEY, String(value))
++  } catch {
++    // Storage unavailable: the clear stays in-memory for this session only.
++  }
++}
++/** Ranking table row cap. */
++export const TOP_LIMIT = 50
++
++const ZERO: TokenUsageProjection = { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
++
++function numberOr(value: unknown, fallback = 0): number {
++  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
++}
++
++/**
++ * Read the session row's tokenUsage projection value. The projection column
++ * serves the flat bucket shape; a defensive branch also accepts the persisted
++ * cache's folded `{ totals, last }` state shape should a deployment ever
++ * surface it on the wire.
++ * @param summary - one session.list row.
++ * @returns the four buckets, zero-filled.
++ */
++export function usageOf(summary: SessionListRow): TokenUsageProjection {
++  const values = summary.projections?.values as Record<string, unknown> | undefined
++  const value = values?.tokenUsage
++  if (value === undefined || value === null || typeof value !== 'object') return ZERO
++  const record = value as Record<string, unknown>
++  const totals = record.totals as Record<string, unknown> | undefined
++  if (totals !== undefined && typeof totals === 'object') {
++    return {
++      uncachedInputTokens: numberOr(totals.uncachedInputTokens),
++      outputTokens: numberOr(totals.outputTokens),
++      cacheReadTokens: numberOr(totals.cacheReadTokens),
++      cacheWriteTokens: numberOr(totals.cacheWriteTokens),
++    }
++  }
++  return {
++    uncachedInputTokens: numberOr(record.uncachedInputTokens),
++    outputTokens: numberOr(record.outputTokens),
++    cacheReadTokens: numberOr(record.cacheReadTokens),
++    cacheWriteTokens: numberOr(record.cacheWriteTokens),
++  }
++}
++
++/** Session-level stats projection value (turns / timings), zero-filled. */
++function statsOf(summary: SessionListRow): { turns: number; llmMs: number; decodeTokens: number } {
++  const values = summary.projections?.values as Record<string, unknown> | undefined
++  const value = values?.sessionStats
++  if (value === undefined || value === null || typeof value !== 'object') {
++    return { turns: 0, llmMs: 0, decodeTokens: 0 }
++  }
++  const record = value as Record<string, unknown>
++  return {
++    turns: numberOr(record.turns),
++    llmMs: numberOr(record.llmMs),
++    decodeTokens: numberOr(record.decodeTokens),
++  }
++}
++
++/** Title projection value, when one exists. */
++function titleOf(summary: SessionListRow): string | undefined {
++  const values = summary.projections?.values as Record<string, unknown> | undefined
++  const value = values?.title
++  return typeof value === 'string' && value.length > 0 ? value : undefined
++}
++
++/** Local calendar day key for a timestamp. */
++function dayKey(time: number): string {
++  const date = new Date(time)
++  const month = String(date.getMonth() + 1).padStart(2, '0')
++  const day = String(date.getDate()).padStart(2, '0')
++  return `${date.getFullYear()}-${month}-${day}`
++}
++
++/** Aggregate one session.list payload into the statistics view. */
++export function aggregate(items: readonly SessionListRow[], resetAt: number | null = null): UsageStats {
++  const totals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, sessions: 0 }
++  let llmMs = 0
++  let decodeTokens = 0
++  let turns = 0
++  const byDayMap = new Map<string, UsageDayBucket>()
++  const rows: UsageSessionRow[] = []
++
++  for (const summary of items) {
++    if (summary.blank) continue
++    if (resetAt !== null && summary.updatedAt < resetAt) continue
++    const usage = usageOf(summary)
++    const stats = statsOf(summary)
++    const total = usage.uncachedInputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
++    if (total > 0) {
++      totals.input += usage.uncachedInputTokens
++      totals.output += usage.outputTokens
++      totals.cacheRead += usage.cacheReadTokens
++      totals.cacheWrite += usage.cacheWriteTokens
++      totals.sessions += 1
++    }
++    llmMs += stats.llmMs
++    decodeTokens += stats.decodeTokens
++    turns += stats.turns
++
++    const key = dayKey(summary.updatedAt)
++    const bucket = byDayMap.get(key)
++    if (bucket === undefined) {
++      byDayMap.set(key, {
++        day: key,
++        input: usage.uncachedInputTokens,
++        output: usage.outputTokens,
++        cacheRead: usage.cacheReadTokens,
++        cacheWrite: usage.cacheWriteTokens,
++        sessions: total > 0 ? 1 : 0,
++      })
++    } else {
++      bucket.input += usage.uncachedInputTokens
++      bucket.output += usage.outputTokens
++      bucket.cacheRead += usage.cacheReadTokens
++      bucket.cacheWrite += usage.cacheWriteTokens
++      if (total > 0) bucket.sessions += 1
++    }
++
++    rows.push({
++      sessionId: summary.sessionId,
++      title: titleOf(summary),
++      updatedAt: summary.updatedAt,
++      input: usage.uncachedInputTokens,
++      output: usage.outputTokens,
++      cacheRead: usage.cacheReadTokens,
++      cacheWrite: usage.cacheWriteTokens,
++      turns: stats.turns,
++      llmMs: stats.llmMs,
++    })
++  }
++
++  // Trailing window: fill every calendar day so the chart never gaps.
++  const byDay: UsageDayBucket[] = []
++  const now = Date.now()
++  for (let offset = DAYS - 1; offset >= 0; offset -= 1) {
++    const time = now - offset * 86_400_000
++    const key = dayKey(time)
++    byDay.push(byDayMap.get(key) ?? { day: key, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, sessions: 0 })
++  }
++
++  const topSessions = rows
++    .sort((a, b) => (b.input + b.output + b.cacheRead + b.cacheWrite) - (a.input + a.output + a.cacheRead + a.cacheWrite))
++    .slice(0, TOP_LIMIT)
++
++  return { totals, llmMs, decodeTokens, turns, byDay, topSessions }
++}
++
++/** Human text for a rejected wire call. */
++export function messageOf(error: unknown): string {
++  if (error instanceof Error) return error.message
++  return String(error)
++}
++
++/** Token usage statistics page store. */
++export class UsageStatsStore {
++  /** The snapshot the section renders from (uSES-safe store). */
++  readonly store: SnapshotStore<UsageStatsState> = createSnapshotStore<UsageStatsState>({
++    status: 'idle', error: null, stats: null, refreshedAt: null, resetAt: readResetAt(),
++  })
++
++  /** Latest load wins; an older response never overwrites a newer one. */
++  private generation = 0
++
++  /**
++   * @param fetchRows - one session-list fetch closure over the remote face.
++   */
++  constructor(private readonly fetchRows: SessionListFetch) {}
++
++  /**
++   * Refresh the whole page snapshot from `session.list`. A failure keeps the
++   * last good stats and surfaces the error.
++   * @returns nothing; the snapshot carries the outcome.
++   */
++  async load(): Promise<void> {
++    const generation = ++this.generation
++    this.store.update((state) => { state.status = 'loading'; state.error = null })
++    try {
++      const result = await this.fetchRows()
++      const stats = aggregate(result.items, readResetAt())
++      if (generation !== this.generation) return
++      this.store.update((state) => {
++        state.status = 'ready'
++        state.stats = stats
++        state.resetAt = readResetAt()
++        state.refreshedAt = Date.now()
++      })
++    } catch (error) {
++      if (generation !== this.generation) return
++      this.store.update((state) => {
++        state.status = 'error'
++        state.error = messageOf(error)
++      })
++    }
++  }
++}
++
++/**
++ * Refetch the page snapshot only after its first load: an unopened Usage
++ * page must not fetch on background invalidations.
++ * @param controller - the page store.
++ */
++export function refreshIfLoaded(controller: UsageStatsStore): void {
++  if (controller.store.getSnapshot().status === 'idle') return
++  void controller.load()
++}
++
++/**
++ * Clear the stats: mark "now" as the aggregation start. Sessions keep their
++ * records; only the usage view resets. Reversible via {@link restoreStats}.
++ * @param controller - the page store.
++ */
++export function clearStats(controller: UsageStatsStore): void {
++  writeResetAt(Date.now())
++  void controller.load()
++}
++
++/**
++ * Restore the full history view by removing the stats start marker.
++ * @param controller - the page store.
++ */
++export function restoreStats(controller: UsageStatsStore): void {
++  writeResetAt(null)
++  void controller.load()
++}
+diff --git a/packages/client/ui-settings-token-usage/src/index.ts b/packages/client/ui-settings-token-usage/src/index.ts
+new file mode 100644
+index 0000000..0dfe286
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/src/index.ts
+@@ -0,0 +1,4 @@
++/** Host loader entry for the browser implementation exported from `./client`. */
++
++/** Host plugin body — no host-side behavior for the token-usage settings plugin. */
++export function apply(): void {}
+diff --git a/packages/client/ui-settings-token-usage/src/invariant.ts b/packages/client/ui-settings-token-usage/src/invariant.ts
+new file mode 100644
+index 0000000..7ca86ea
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/src/invariant.ts
+@@ -0,0 +1,13 @@
++/** Package-owned invariant companion for `@deepseek-ai/dsh-client-ui-settings-token-usage`. */
++
++export const name = 'client-ui-settings-token-usage-invariant'
++
++/**
++ * Confirm the package under test really is this package.
++ * @param expected - the package name this invariant guards.
++ */
++export function invariant(expected: string): void {
++  if (expected !== '@deepseek-ai/dsh-client-ui-settings-token-usage') {
++    throw new Error('invariant: unexpected package under test: ' + expected)
++  }
++}
+diff --git a/packages/client/ui-settings-token-usage/tsconfig.json b/packages/client/ui-settings-token-usage/tsconfig.json
+new file mode 100644
+index 0000000..66adc2d
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/tsconfig.json
+@@ -0,0 +1,33 @@
++{
++  "extends": "../../../tsconfig.base.client.json",
++  "compilerOptions": {
++    "rootDir": "src",
++    "outDir": "lib/types"
++  },
++  "include": [
++    "src"
++  ],
++  "references": [
++    {
++      "path": "../../../vendor/cordis"
++    },
++    {
++      "path": "../ui-slots"
++    },
++    {
++      "path": "../ui-primitives"
++    },
++    {
++      "path": "../ui-settings"
++    },
++    {
++      "path": "../locale"
++    },
++    {
++      "path": "../../runtime-diagnostics/invariants"
++    },
++    {
++      "path": "../../api/remotes/tsconfig.client.json"
++    }
++  ]
++}
+diff --git a/packages/client/ui-settings-token-usage/tsdown.config.ts b/packages/client/ui-settings-token-usage/tsdown.config.ts
+new file mode 100644
+index 0000000..a9551f1
+--- /dev/null
++++ b/packages/client/ui-settings-token-usage/tsdown.config.ts
+@@ -0,0 +1,3 @@
++import { clientBundle } from '../tsdown.client.ts'
++
++export default clientBundle('@deepseek-ai/dsh-client-ui-settings-token-usage', ['lib/types/index.js', 'lib/types/invariant.js'])
+-- 
+2.53.0.windows.1
+

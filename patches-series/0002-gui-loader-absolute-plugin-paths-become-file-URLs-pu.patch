@@ -1,0 +1,299 @@
+From b65e443e614d068c70f19d89fccc08500c4b6615 Mon Sep 17 00:00:00 2001
+From: dsh-gui <dsh-gui@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 06:57:24 +0800
+Subject: [PATCH 2/6] gui(loader): absolute plugin paths become file:// URLs
+ (pure JS)
+
+---
+ .../src/directory-picker.ts                   | 56 +++++++++++++
+ .../src/native-picker.ts                      | 82 +++++++++++++++++--
+ packages/llm/llm-pi-ai/src/catalog.ts         | 16 ++--
+ vendor/loader/src/config/tree.ts              | 52 +++++++++++-
+ 4 files changed, 188 insertions(+), 18 deletions(-)
+
+diff --git a/packages/api/workspace-controller/src/directory-picker.ts b/packages/api/workspace-controller/src/directory-picker.ts
+index 41f7db9..b20bff8 100644
+--- a/packages/api/workspace-controller/src/directory-picker.ts
++++ b/packages/api/workspace-controller/src/directory-picker.ts
+@@ -24,6 +24,50 @@ const createDirectoryRequestSchema = z.object({
+   { message: 'host.createDirectory requires a single non-blank path segment name' },
+ )
+ 
++// ---------------------------------------------------------------------------
++// dsh-gui: prefer the desktop launcher's Electron native dialog
++// (127.0.0.1:3082) over the koffi-backed worker. This lives in the app.asar
++// tree, so an in-place auto-update carries it to users who retain an older
++// dsh-profile-seed. When the endpoint is absent (web-only runtime, launcher
++// not serving, or an older desktop build) the caller falls through to the
++// composed native capability instead of failing.
++// ---------------------------------------------------------------------------
++const GUI_PICKER_URL = 'http://127.0.0.1:3082/pick-directory'
++const GUI_PICKER_UNAVAILABLE = 'gui-picker-unavailable'
++const GUI_PICKER_LONG_TIMEOUT_MS = 600_000
++
++async function pickDirectoryGui(signal: AbortSignal, title = 'Select Workspace Directory'): Promise<string | null> {
++  const controller = new AbortController()
++  const onAbort = (): void => controller.abort()
++  const timer = setTimeout(onAbort, GUI_PICKER_LONG_TIMEOUT_MS)
++  signal.addEventListener('abort', onAbort, { once: true })
++  try {
++    const response = await fetch(GUI_PICKER_URL, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ title }),
++      signal: controller.signal,
++    })
++    clearTimeout(timer)
++    if (!response.ok) throw new Error(GUI_PICKER_UNAVAILABLE)
++    const data = await response.json() as unknown
++    if (signal.aborted) return null
++    if (data !== null && typeof data === 'object' && 'cancelled' in data
++      && (data as { cancelled?: unknown }).cancelled === true) return null
++    const path = data !== null && typeof data === 'object' ? (data as { path?: unknown }).path : undefined
++    if (typeof path === 'string') return path
++    throw new Error(GUI_PICKER_UNAVAILABLE)
++  } catch (error: unknown) {
++    if (signal.aborted) return null
++    const err = new Error(GUI_PICKER_UNAVAILABLE)
++    ;(err as NodeJS.ErrnoException).code = GUI_PICKER_UNAVAILABLE
++    throw err
++  } finally {
++    clearTimeout(timer)
++    signal.removeEventListener('abort', onAbort)
++  }
++}
++
+ declare module '@deepseek-ai/cordis' {
+   interface Context {
+     /** Host directory-picking Remote namespace owner. */
+@@ -53,6 +97,18 @@ export class DirectoryPickerController extends TypertRemoteService {
+    */
+   @Remote('pick')
+   async pick(signal: AbortSignal): Promise<string | null> {
++    // dsh-gui: prefer the desktop launcher's Electron native dialog
++    // (127.0.0.1:3082) over the koffi-backed worker; falls through to the
++    // composed capability when the endpoint is unavailable.
++    try {
++      const path = await pickDirectoryGui(signal)
++      return path
++    } catch (error: unknown) {
++      const code = (error as NodeJS.ErrnoException | undefined)?.code
++      if (code !== GUI_PICKER_UNAVAILABLE && !((error instanceof Error) && error.message === GUI_PICKER_UNAVAILABLE)) {
++        throw cancellableFailure(error, signal, 'directory picker was aborted', 'directory picker failed')
++      }
++    }
+     const capability = this.requireCapability('native', 'pick')
+     try {
+       return await capability.pick(signal)
+diff --git a/packages/host/directory-picker-native/src/native-picker.ts b/packages/host/directory-picker-native/src/native-picker.ts
+index 312d898..a644e2a 100644
+--- a/packages/host/directory-picker-native/src/native-picker.ts
++++ b/packages/host/directory-picker-native/src/native-picker.ts
+@@ -12,6 +12,8 @@ export interface DirectoryPickerInternals {
+   run?: DirectoryPickerRunner
+   /** Replaces the in-process Win32 dialog (`pickWin32Directory`) for deterministic tests. */
+   pickWin32Dialog?: (signal: AbortSignal) => Promise<string | null>
++  /** dsh-gui: replaces the desktop-launcher dialog probe for deterministic tests. */
++  pickGuiDialog?: (signal: AbortSignal) => Promise<string | null>
+ }
+ 
+ function outputPath(stdout: string): string | null {
+@@ -39,6 +41,60 @@ function rethrowIfAborted(signal: AbortSignal, error: unknown): void {
+   if (signal.aborted) throw error
+ }
+ 
++// ---------------------------------------------------------------------------
++// dsh-gui: prefer the desktop launcher's Electron native dialog
++// (127.0.0.1:3082) over the koffi-backed worker. The desktop GUI registers
++// this endpoint in its main process; the dsh runtime is its child and can
++// reach it without CORS. When the endpoint is absent (web-only runtime,
++// launcher not serving, or an older desktop build) this throws a distinct
++// marker so the caller falls back to the koffi worker instead of failing.
++// ---------------------------------------------------------------------------
++const GUI_PICKER_URL = 'http://127.0.0.1:3082/pick-directory'
++const GUI_PICKER_UNAVAILABLE = 'gui-picker-unavailable'
++const GUI_PICKER_LONG_TIMEOUT_MS = 600_000
++
++async function pickGuiDialog(signal: AbortSignal, title = 'Select Workspace Directory'): Promise<string | null> {
++  const controller = new AbortController()
++  const onAbort = (): void => controller.abort()
++  signal.addEventListener('abort', onAbort, { once: true })
++  try {
++    // No artificial short timeout: 3082 is reachable iff the desktop launcher
++    // serves it, in which case the Electron dialog waits as long as the user
++    // needs. When the endpoint is absent, fetch rejects immediately
++    // (ECONNREFUSED) -> fall back to the koffi worker. A stale/gone launcher
++    // that never answers could hang, so keep a generous ceiling well beyond
++    // any normal dialog interaction.
++    const timeout = setTimeout(onAbort, GUI_PICKER_LONG_TIMEOUT_MS)
++    try {
++      const response = await fetch(GUI_PICKER_URL, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ title }),
++        signal: controller.signal,
++      })
++      if (!response.ok) throw new Error(GUI_PICKER_UNAVAILABLE)
++      const data = await response.json() as unknown
++      if (signal.aborted) return null
++      if (data !== null && typeof data === 'object' && 'cancelled' in data
++        && (data as { cancelled?: unknown }).cancelled === true) return null
++      const path = data !== null && typeof data === 'object' ? (data as { path?: unknown }).path : undefined
++      if (typeof path === 'string') return path
++      // Unknown shape: treat as unavailable so the caller falls back.
++      throw new Error(GUI_PICKER_UNAVAILABLE)
++    } finally {
++      clearTimeout(timeout)
++    }
++  } catch (error: unknown) {
++    if (signal.aborted) return null
++    // Endpoint unreachable / malformed / long-hung: signal fallback to koffi.
++    const err = new Error(GUI_PICKER_UNAVAILABLE)
++    ;(err as NodeJS.ErrnoException).code = GUI_PICKER_UNAVAILABLE
++    throw err
++  } finally {
++    signal.removeEventListener('abort', onAbort)
++  }
++}
++
+ /**
+  * Open the platform directory picker.
+  * @param signal - caller/connection lifetime; abort terminates the native command.
+@@ -67,13 +123,25 @@ export async function pickNativeDirectory(
+   }
+ 
+   if (platform === 'win32') {
+-    // The koffi-backed IFileOpenDialog child process — the modern picker with
+-    // per-monitor-v2 DPI and abort support. koffi is a packaged dependency
+-    // whose availability the install guarantees, so there is no fallback
+-    // tier: any failure surfaces as-is (no PowerShell fallback tier; see
+-    // .agents/notes/archived/simplification/2026-08-04-drop-windows-powershell-picker-fallback.md).
+-    const pickDialog = internals.pickWin32Dialog ?? pickWin32Directory
+-    return await pickDialog(signal)
++    // dsh-gui: prefer the Electron launcher's native dialog; fall back to the
++    // koffi worker when the GUI endpoint is not being served (web-only or
++    // older desktop build).
++    try {
++      return await (internals.pickGuiDialog ?? pickGuiDialog)(signal)
++    } catch (error: unknown) {
++      if (signal.aborted) return null
++      if (errorCode(error) === GUI_PICKER_UNAVAILABLE
++        || (error instanceof Error && error.message === GUI_PICKER_UNAVAILABLE)) {
++        // The koffi-backed IFileOpenDialog child process — the modern picker
++        // with per-monitor-v2 DPI and abort support. koffi is a packaged
++        // dependency whose availability the install guarantees, so there is
++        // no fallback tier: any failure surfaces as-is (no PowerShell
++        // fallback tier).
++        const pickDialog = internals.pickWin32Dialog ?? pickWin32Directory
++        return await pickDialog(signal)
++      }
++      throw error
++    }
+   }
+ 
+   if (platform === 'linux') {
+diff --git a/packages/llm/llm-pi-ai/src/catalog.ts b/packages/llm/llm-pi-ai/src/catalog.ts
+index d626c1a..3afa8ba 100644
+--- a/packages/llm/llm-pi-ai/src/catalog.ts
++++ b/packages/llm/llm-pi-ai/src/catalog.ts
+@@ -692,14 +692,16 @@ function resolveModelReasoning(
+   entry: PiAiModelProfile,
+   base: Model<Api> | undefined,
+ ): ModelReasoning {
+-  const efforts = entry.reasoningEfforts
++  let efforts = entry.reasoningEfforts
+   if (efforts === undefined) {
+-    // Reasoning rides the installed entry or is absent: a bare capability flag
+-    // would make pi-ai advertise effort levels with no `thinkingLevelMap` to
+-    // spell them, and no listing endpoint reports a model's reasoning
+-    // protocol. The entry's map (when any) arrives through the `...base`
+-    // spread in the model literal.
+-    return { reasoning: base?.reasoning ?? false }
++    // dsh-gui: a hand-declared custom model (no installed catalog entry)
++    // defaults to a standard OpenAI-compatible reasoning capability so the
++    // composer offers the thinking control for every custom provider — not
++    // only the ones that hand-wrote reasoningEfforts. Catalog models keep
++    // their own declared capability (base.reasoning), and
++    // reasoningEfforts: false still opts a model out.
++    if (base !== undefined) return { reasoning: base?.reasoning ?? false }
++    efforts = { low: 'low', medium: 'medium', high: 'high' }
+   }
+   // The installed entry's map may ride along through `...base`; pi-ai never
+   // reads it on a non-reasoning model, so stripping it is not worth a field
+diff --git a/vendor/loader/src/config/tree.ts b/vendor/loader/src/config/tree.ts
+index c1925f0..1d30e4b 100644
+--- a/vendor/loader/src/config/tree.ts
++++ b/vendor/loader/src/config/tree.ts
+@@ -146,21 +146,65 @@ export abstract class EntryTree {
+     if (name.startsWith('cordis:')) {
+       return this.ctx.loader.builtins[name.slice(7)]
+     }
++    // dsh-gui: an absolute plugin path must arrive as a file:// URL — on
++    // Windows import('C:/...') throws ERR_UNSUPPORTED_ESM_URL_SCHEME.
++    const specifier = absolutePathPattern.test(name) ? absolutePathToFileHref(name) : name
+     return composeError(async (info) => {
+       // ModuleJob.run
+       // onImport.tracePromise.__proto__
+       // internal.import
+       info.offset += 3
+       if (this.ctx.loader.internal) {
+-        return await this.ctx.loader.internal.import(name, this.ctx.baseUrl!, {})
+-      } else if (name.startsWith('.')) {
+-        return await import(/* @vite-ignore */new URL(name, this.ctx.baseUrl).href)
++        return await this.importInternal(specifier, this.ctx.baseUrl!)
++      } else if (specifier.startsWith('.')) {
++        return await import(/* @vite-ignore */new URL(specifier, this.ctx.baseUrl).href)
+       } else {
+-        return await import(/* @vite-ignore */name)
++        return await import(/* @vite-ignore */specifier)
+       }
+     }, getOuterStack)
+   }
+ 
++  /**
++   * dsh-gui: import one bare specifier through the internal loader. The
++   * caller-relative base (profile-local node_modules and the flat fallback)
++   * keeps out-of-tree plugins and their peers working; when it misses (a
++   * fallback that is still materializing, or one a crashed boot left
++   * partial), in-box packages still resolve from this host's own
++   * node_modules — a packaged installation's asar tree.
++   */
++  private async importInternal(name: string, baseUrl: string) {
++    let lastError: unknown
++    for (const base of [baseUrl, new URL('../../../', import.meta.url).href]) {
++      if (base === undefined || base === null || base === '') continue
++      try {
++        return await this.ctx.loader.internal!.import(name, base, {})
++      } catch (error) {
++        lastError = error
++      }
++    }
++    throw lastError
++  }
++
+   /** Persist current tree state. In-memory trees may implement this as a no-op. */
+   abstract write(): void
+ }
++
++/** dsh-gui: specifiers treated as local absolute paths (Windows drive, POSIX root, UNC). */
++const absolutePathPattern = /^[A-Za-z]:[\\/]|^[\\/]/
++
++/**
++ * dsh-gui: file:// URL for a local absolute path, without node:url so the
++ * browser bundle of this package stays free of node builtins (the same
++ * spelling node:path's pathToFileURL emits for drive paths, with every
++ * other segment percent-encoded).
++ */
++function absolutePathToFileHref(path: string): string {
++  const unified = path.replace(/\\/g, '/')
++  const parts = unified.split('/')
++  const isDrive = /^[A-Za-z]:$/.test(parts[0]!)
++  if (unified.startsWith('//')) return 'file://' + unified  // UNC share
++  const head = isDrive ? 'file:///' + parts[0] : 'file://' + (unified.startsWith('/') ? '' : '/')
++  const segments = isDrive ? parts.slice(1) : parts
++  const tail = segments.filter(segment => segment !== '').map(encodeURIComponent).join('/')
++  return head + '/' + tail
++}
+-- 
+2.53.0.windows.1
+

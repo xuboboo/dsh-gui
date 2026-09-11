@@ -1,0 +1,323 @@
+From bb35f661121baf209c417c4a8bacc41766ed41e6 Mon Sep 17 00:00:00 2001
+From: dsh-gui <dsh-gui@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 06:57:51 +0800
+Subject: [PATCH 5/6] gui(lock): lockfile after registering
+ ui-settings-token-usage
+
+---
+ pnpm-lock.yaml | 118 +++++++++++++++++++++++++++++++++++++------------
+ 1 file changed, 89 insertions(+), 29 deletions(-)
+
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index be1647c..fdd4174 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -1873,6 +1873,9 @@ importers:
+       '@deepseek-ai/dsh-client-ui-settings-plugins':
+         specifier: workspace:^
+         version: link:../../client/ui-settings-plugins
++      '@deepseek-ai/dsh-client-ui-settings-token-usage':
++        specifier: workspace:^
++        version: link:../../client/ui-settings-token-usage
+       '@deepseek-ai/dsh-client-ui-sidebar':
+         specifier: workspace:^
+         version: link:../../client/ui-sidebar
+@@ -1986,7 +1989,7 @@ importers:
+         version: 15.0.0
+       open:
+         specifier: ^11.0.0
+-        version: 11.0.0
++        version: 11.0.2
+     devDependencies:
+       '@deepseek-ai/cordis':
+         specifier: workspace:^
+@@ -3446,7 +3449,7 @@ importers:
+         version: 18.3.7(@types/react@18.3.31)
+       '@types/use-sync-external-store':
+         specifier: ^1.5.0
+-        version: 1.5.0
++        version: 1.7.0
+       react:
+         specifier: ^18.2.0
+         version: 18.3.1
+@@ -3746,6 +3749,36 @@ importers:
+         specifier: ^18.2.0
+         version: 18.3.1
+ 
++  packages/client/ui-settings-token-usage:
++    devDependencies:
++      '@deepseek-ai/cordis':
++        specifier: workspace:^
++        version: link:../../../vendor/cordis
++      '@deepseek-ai/dsh-api-remotes':
++        specifier: workspace:^
++        version: link:../../api/remotes
++      '@deepseek-ai/dsh-client-locale':
++        specifier: workspace:^
++        version: link:../locale
++      '@deepseek-ai/dsh-client-ui-primitives':
++        specifier: workspace:^
++        version: link:../ui-primitives
++      '@deepseek-ai/dsh-client-ui-settings':
++        specifier: workspace:^
++        version: link:../ui-settings
++      '@deepseek-ai/dsh-client-ui-slots':
++        specifier: workspace:^
++        version: link:../ui-slots
++      '@deepseek-ai/dsh-invariants':
++        specifier: workspace:^
++        version: link:../../runtime-diagnostics/invariants
++      '@types/react':
++        specifier: ~18.3.1
++        version: 18.3.31
++      react:
++        specifier: ^18.2.0
++        version: 18.3.1
++
+   packages/client/ui-sidebar:
+     devDependencies:
+       '@deepseek-ai/cordis':
+@@ -6707,7 +6740,7 @@ importers:
+         version: 1.8.1(supports-color@9.4.0)
+       negotiator:
+         specifier: ^1.0.0
+-        version: 1.0.0
++        version: 1.1.0
+     devDependencies:
+       '@deepseek-ai/cordis':
+         specifier: workspace:^
+@@ -14213,8 +14246,8 @@ packages:
+   '@types/unist@3.0.3':
+     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+ 
+-  '@types/use-sync-external-store@1.5.0':
+-    resolution: {integrity: sha512-5dyB8nLC/qogMrlCizZnYWQTA4lnb/v+It+sqNl5YnSRAPMlIqY/X0Xn+gZw8vOL+TgTTr28VEbn3uf8fUtAkw==}
++  '@types/use-sync-external-store@1.7.0':
++    resolution: {integrity: sha512-v8435kzWm3FuxyUa4r8o4sG6b0D+r+uOrzF5MXHxZKW4Haoo6txu/lq56Vio45e2i1nkmFPA+R7myWcmV7Z7Bg==}
+ 
+   '@types/web-bluetooth@0.0.21':
+     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
+@@ -14886,6 +14919,10 @@ packages:
+     resolution: {integrity: sha512-j/O/d7GcZCyNl7/hwZAb606rzqkyvaDctLmckbxLzHvFBzTJHuGEdodATcP3yIRoDrLHkIATJuvzbFlp/ki2cQ==}
+     engines: {node: '>=18'}
+ 
++  content-type@2.1.0:
++    resolution: {integrity: sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag==}
++    engines: {node: '>=18'}
++
+   convert-source-map@2.0.0:
+     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
+ 
+@@ -15137,8 +15174,8 @@ packages:
+     resolution: {integrity: sha512-x1VCxdX4t+8wVfd1so/9w+vQ4vx7lKd2Qp5tDRutErwmR85OgmfX7RlLRMWafRMY7hbEiXIbudNrjOAPa/hL8Q==}
+     engines: {node: '>=18'}
+ 
+-  default-browser@5.5.0:
+-    resolution: {integrity: sha512-H9LMLr5zwIbSxrmvikGuI/5KGhZ8E2zH3stkMgM5LpOWDutGM2JZaj460Udnf1a+946zc7YBgrqEWwbk7zHvGw==}
++  default-browser@5.5.1:
++    resolution: {integrity: sha512-m1pAzaJgZ/gssEqlOhJkPJp8Xly7QyW6xcrkUa2KKcDeDSEMP7X8xipU3snUcfisTQx0w1AGae+9UtJSfVnXGw==}
+     engines: {node: '>=18'}
+ 
+   defer-to-connect@2.0.1:
+@@ -15696,9 +15733,13 @@ packages:
+     deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+     hasBin: true
+ 
++  glob@7.2.0:
++    resolution: {integrity: sha512-lmLf6gtyrPq8tTjSmrO94wBeQbFR3HbLHbuyD69wuyQkImp2hWqMGB47OX65FBkPffO641IP9jWa1z4ivqG26Q==}
++    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
++
+   glob@7.2.3:
+     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
+-    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
++    deprecated: Glob versions prior to v9 are no longer supported
+ 
+   global-agent@3.0.0:
+     resolution: {integrity: sha512-PT6XReJ+D07JvGoxQMkT6qji/jVNfX/h364XHZOWeRzy64sSFr+xJ5OX7LI3b4MPQzdL4H8Y8M0xzPpsVMwA8Q==}
+@@ -16407,8 +16448,8 @@ packages:
+   mdn-data@2.27.1:
+     resolution: {integrity: sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==}
+ 
+-  media-typer@1.1.0:
+-    resolution: {integrity: sha512-aisnrDP4GNe06UcKFnV5bfMNPBUw4jsLGaWwWfnH3v02GnBuXX2MCVn5RbrWo0j3pczUilYblq7fQ7Nw2t5XKw==}
++  media-typer@1.1.1:
++    resolution: {integrity: sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ==}
+     engines: {node: '>= 0.8'}
+ 
+   merge-descriptors@2.0.0:
+@@ -16613,9 +16654,9 @@ packages:
+     resolution: {integrity: sha512-myRT3DiWPHqho5PrJaIRyaMv2kgYf0mUVgBNOYMuCH5Ki1yEiQaf/ZJuQ62nvpc44wL5WDbTX7yGJi1Neevw8w==}
+     engines: {node: '>= 0.6'}
+ 
+-  negotiator@1.0.0:
+-    resolution: {integrity: sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==}
+-    engines: {node: '>= 0.6'}
++  negotiator@1.1.0:
++    resolution: {integrity: sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg==}
++    engines: {node: '>=18'}
+ 
+   node-abi@3.96.0:
+     resolution: {integrity: sha512-rebQ/lz7i0EkoLzUVSrKRzA69zMkwLp95kKMWoMDkkM00Suxz0D7zEQPwRml5fQum24mj7bPvmlgLAmu2JCiYg==}
+@@ -16763,8 +16804,8 @@ packages:
+   oniguruma-to-es@4.3.6:
+     resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
+ 
+-  open@11.0.0:
+-    resolution: {integrity: sha512-smsWv2LzFjP03xmvFoJ331ss6h+jixfA4UUV/Bsiyuu4YJPfN+FIQGOIiv4w9/+MoHkfkJ22UIaQWRVFRfH6Vw==}
++  open@11.0.2:
++    resolution: {integrity: sha512-RWqF+pBSkqecEvCKOn8QYhaNdRMJDZRIrlS/7rTDdLHaPcfXGCZ/h8zb413NfvdeAV0MR7T1yJcA34/q+CSm1Q==}
+     engines: {node: '>=20'}
+ 
+   openai@6.40.0:
+@@ -16965,6 +17006,10 @@ packages:
+     resolution: {integrity: sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==}
+     engines: {node: '>=20'}
+ 
++  powershell-utils@0.2.1:
++    resolution: {integrity: sha512-C+y9x90UElAddDZmV4qOx9W53B61PO7cIqWz2dQsWlwswuq4mr8NEwytdGKboYbQlGZ3awrkTeNvcZiZNHnQ8A==}
++    engines: {node: '>=20'}
++
+   preact@10.29.7:
+     resolution: {integrity: sha512-DCHYrK/B10yUD3ZjLfhZ3WIE/9Vf9VFUODcRE2dRomTYDpJk6z6L9wecSfhfE6M9ZTHUdyQkoC46arIDhEV84Q==}
+     peerDependencies:
+@@ -18069,8 +18114,8 @@ packages:
+       utf-8-validate:
+         optional: true
+ 
+-  wsl-utils@0.3.1:
+-    resolution: {integrity: sha512-g/eziiSUNBSsdDJtCLB8bdYEUMj4jR7AGeUo96p/3dTafgjHhpF4RiCFPiRILwjQoDXx5MqkBr4fwWtR3Ky4Wg==}
++  wsl-utils@1.0.0:
++    resolution: {integrity: sha512-Hl0ZOAs672vg+06kfujwRhoS6/jehvULrlFkuF2dRu6pHgA8U06h3xqNIqNNU1LTXPcedxByAR4GS6pwQK0mgA==}
+     engines: {node: '>=20'}
+ 
+   xml-name-validator@5.0.0:
+@@ -20786,7 +20831,7 @@ snapshots:
+ 
+   '@types/unist@3.0.3': {}
+ 
+-  '@types/use-sync-external-store@1.5.0': {}
++  '@types/use-sync-external-store@1.7.0': {}
+ 
+   '@types/web-bluetooth@0.0.21': {}
+ 
+@@ -21108,7 +21153,7 @@ snapshots:
+   accepts@2.0.0:
+     dependencies:
+       mime-types: 3.0.2
+-      negotiator: 1.0.0
++      negotiator: 1.1.0
+ 
+   acorn-jsx@5.3.2(acorn@8.17.0):
+     dependencies:
+@@ -21541,6 +21586,8 @@ snapshots:
+ 
+   content-type@2.0.0: {}
+ 
++  content-type@2.1.0: {}
++
+   convert-source-map@2.0.0: {}
+ 
+   cookie-signature@1.2.2: {}
+@@ -21807,7 +21854,7 @@ snapshots:
+ 
+   default-browser-id@5.0.1: {}
+ 
+-  default-browser@5.5.0:
++  default-browser@5.5.1:
+     dependencies:
+       bundle-name: 4.1.0
+       default-browser-id: 5.0.1
+@@ -22559,6 +22606,15 @@ snapshots:
+       package-json-from-dist: 1.0.1
+       path-scurry: 2.0.2
+ 
++  glob@7.2.0:
++    dependencies:
++      fs.realpath: 1.0.0
++      inflight: 1.0.6
++      inherits: 2.0.4
++      minimatch: 3.1.5
++      once: 1.4.0
++      path-is-absolute: 1.0.1
++
+   glob@7.2.3:
+     dependencies:
+       fs.realpath: 1.0.0
+@@ -23332,7 +23388,7 @@ snapshots:
+ 
+   mdn-data@2.27.1: {}
+ 
+-  media-typer@1.1.0: {}
++  media-typer@1.1.1: {}
+ 
+   merge-descriptors@2.0.0: {}
+ 
+@@ -23650,7 +23706,9 @@ snapshots:
+ 
+   negotiator@0.6.4: {}
+ 
+-  negotiator@1.0.0: {}
++  negotiator@1.1.0:
++    dependencies:
++      content-type: 2.1.0
+ 
+   node-abi@3.96.0:
+     dependencies:
+@@ -23796,14 +23854,14 @@ snapshots:
+       regex: 6.1.0
+       regex-recursion: 6.0.2
+ 
+-  open@11.0.0:
++  open@11.0.2:
+     dependencies:
+-      default-browser: 5.5.0
++      default-browser: 5.5.1
+       define-lazy-prop: 3.0.0
+       is-in-ssh: 1.0.0
+       is-inside-container: 1.0.0
+-      powershell-utils: 0.1.0
+-      wsl-utils: 0.3.1
++      powershell-utils: 0.2.1
++      wsl-utils: 1.0.0
+ 
+   openai@6.40.0(ws@8.21.0)(zod@4.4.3):
+     optionalDependencies:
+@@ -24010,6 +24068,8 @@ snapshots:
+ 
+   powershell-utils@0.1.0: {}
+ 
++  powershell-utils@0.2.1: {}
++
+   preact@10.29.7: {}
+ 
+   prebuild-install@7.1.3:
+@@ -24228,7 +24288,7 @@ snapshots:
+ 
+   rimraf@2.6.3:
+     dependencies:
+-      glob: 7.2.3
++      glob: 7.2.0
+ 
+   roarr@2.15.4:
+     dependencies:
+@@ -24839,7 +24899,7 @@ snapshots:
+   type-is@2.1.0:
+     dependencies:
+       content-type: 2.0.0
+-      media-typer: 1.1.0
++      media-typer: 1.1.1
+       mime-types: 3.0.2
+ 
+   typebox@1.3.7: {}
+@@ -25260,7 +25320,7 @@ snapshots:
+ 
+   ws@8.21.0: {}
+ 
+-  wsl-utils@0.3.1:
++  wsl-utils@1.0.0:
+     dependencies:
+       is-wsl: 3.1.1
+       powershell-utils: 0.1.0
+-- 
+2.53.0.windows.1
+

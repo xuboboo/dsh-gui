@@ -1,0 +1,58 @@
+From d40265ca5f00e7a45b078eee0d2e2614b3e4b64a Mon Sep 17 00:00:00 2001
+From: dsh-gui <dsh-gui@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 06:57:50 +0800
+Subject: [PATCH 3/6] gui(web-app): register token-usage settings plugin
+
+cordis.patch insert row + workspace dependency + client solution reference.
+---
+ packages/bundle/web-app/cordis.patch.yml | 8 ++++++++
+ packages/bundle/web-app/package.json     | 1 +
+ tsconfig.client.json                     | 1 +
+ 3 files changed, 10 insertions(+)
+
+diff --git a/packages/bundle/web-app/cordis.patch.yml b/packages/bundle/web-app/cordis.patch.yml
+index cf46030..101e657 100644
+--- a/packages/bundle/web-app/cordis.patch.yml
++++ b/packages/bundle/web-app/cordis.patch.yml
+@@ -246,6 +246,14 @@
+     - id: ui-settings-plugin-inventory
+       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
+ 
++    # dsh-gui addition: Token usage statistics settings page.
++    - id: ui-settings-token-usage
++      name: '@deepseek-ai/dsh-client-ui-settings-token-usage'
++
++    # dsh-gui addition: 插件市场（内置可选插件一键启停）。
++    - id: plugin-market
++      name: '@dsh-gui/plugin-market'
++
+     - id: ui-conversation
+       name: '@deepseek-ai/dsh-client-ui-conversation'
+ 
+diff --git a/packages/bundle/web-app/package.json b/packages/bundle/web-app/package.json
+index 3498cb6..aa3c793 100644
+--- a/packages/bundle/web-app/package.json
++++ b/packages/bundle/web-app/package.json
+@@ -80,6 +80,7 @@
+     "@deepseek-ai/dsh-client-ui-settings-general": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-settings-models": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-settings-plugin-inventory": "workspace:^",
++    "@deepseek-ai/dsh-client-ui-settings-token-usage": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-settings-plugins": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
+     "@deepseek-ai/dsh-client-ui-sidebar-files": "workspace:^",
+diff --git a/tsconfig.client.json b/tsconfig.client.json
+index 8ffb941..53dbde5 100644
+--- a/tsconfig.client.json
++++ b/tsconfig.client.json
+@@ -108,6 +108,7 @@
+     { "path": "./packages/client/ui-settings-general" },
+     { "path": "./packages/client/ui-settings-models" },
+     { "path": "./packages/client/ui-settings-plugin-inventory" },
++    { "path": "./packages/client/ui-settings-token-usage" },
+     { "path": "./packages/client/locale" },
+     { "path": "./packages/client/ui-renderer" },
+     { "path": "./packages/client/ui-session" },
+-- 
+2.53.0.windows.1
+

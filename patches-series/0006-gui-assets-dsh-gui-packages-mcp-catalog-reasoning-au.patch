@@ -1,0 +1,501 @@
+From e33d4ae7ad25bf9be3d7c334bd6cced3a224d4c9 Mon Sep 17 00:00:00 2001
+From: dsh-gui <dsh-gui@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 07:00:33 +0800
+Subject: [PATCH 6/6] gui(assets): @dsh-gui packages (mcp-catalog,
+ reasoning-autopilot, plugin-market)
+
+Prebuilt dual-half GUI plugins distributed inside the app asar via the
+assemble step. mcp-catalog: MCP server catalog + hot-mount. plugin-market:
+in-box optional plugin marketplace (settings > plugins > market tab).
+---
+ gui-assets/mcp-catalog/README.zh.md         |  60 ++++
+ gui-assets/mcp-catalog/package.json         |  22 ++
+ gui-assets/mcp-catalog/src/client.js        | 329 ++++++++++++++++++++
+ gui-assets/plugin-market/package.json       |  22 ++
+ gui-assets/reasoning-autopilot/package.json |  12 +
+ 5 files changed, 445 insertions(+)
+ create mode 100644 gui-assets/mcp-catalog/README.zh.md
+ create mode 100644 gui-assets/mcp-catalog/package.json
+ create mode 100644 gui-assets/mcp-catalog/src/client.js
+ create mode 100644 gui-assets/plugin-market/package.json
+ create mode 100644 gui-assets/reasoning-autopilot/package.json
+
+diff --git a/gui-assets/mcp-catalog/README.zh.md b/gui-assets/mcp-catalog/README.zh.md
+new file mode 100644
+index 0000000..92a7834
+--- /dev/null
++++ b/gui-assets/mcp-catalog/README.zh.md
+@@ -0,0 +1,60 @@
++# @dsh-gui/mcp-catalog
++
++MCP 服务器目录 + 一键配置 UI（dsh-gui Phase 1）。双半侧插件：
++
++- **宿主半侧**（`lib/index.js`）：注册 settings 命名空间 `mcp-catalog`（存于
++  `~/.dsh/settings.yaml`），watch 解析值并把启用的服务器对账挂载为
++  `@deepseek-ai/dsh-mcp-client` Loader 条目（id 形如 `mcp-<serverName>`）。
++  启用/停用/改配即时生效，无需重启宿主；重启后从文档自动重挂载。
++  与手工 patch 行 id 冲突时让位并告警，绝不抢所有权。
++- **浏览器半侧**（`lib/client.js`，源码 `src/client.js`）：向 设置→插件
++  贡献「MCP」标签页。内置目录（memory、sequential-thinking、everything、
++  filesystem、github、brave-search、puppeteer、sqlite）+ 自定义服务器。
++  一键添加 → 表单 → 保存即写入命名空间（revision 设栅），宿主随即热挂载。
++
++## 安装（已装好，备查）—— 双锚点架构
++
++本插件有两个独立消费者，解析锚点不同，需各就各位：
++
++| 消费者 | 锚点 | 放置位置 |
++|---|---|---|
++| 加载器（导入宿主半侧） | 自身 node_modules 树（GUI = app.asar 内部） | 随 `dev/src/asar-unpacked/node_modules/@dsh-gui/mcp-catalog` 打进 asar |
++| 客户端扫描器（发现浏览器半侧） | `createRequire(profile 目录)`，向上爬 node_modules | `~/.dsh/profiles/web/node_modules/@dsh-gui/mcp-catalog`（junction → `profiles/web/mcp-catalog`） |
++
++1. profile 层实体包：`~/.dsh/profiles/web/mcp-catalog/`。
++2. 建联接供扫描器解析：
++
++    ```powershell
++    New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\@dsh-gui" | Out-Null
++    cmd /c mklink /J "$env:USERPROFILE\.dsh\profiles\web\node_modules\@dsh-gui\mcp-catalog" "$env:USERPROFILE\.dsh\profiles\web\mcp-catalog"
++    ```
++
++3. 用户 patch 层（`~/.dsh/profiles/web/cordis.patch.yml`）insert 列表加入裸包名行：
++
++   ```yaml
++   - id: mcp-catalog
++     name: '@dsh-gui/mcp-catalog'
++   ```
++
++4. package.json 的 exports 必须显式列出 `"./package.json": "./package.json"`
++   （exports 存在时未列子路径被封禁，且扫描器对解析失败是静默 null 缓存，无日志）。
++5. GUI 场景重打包（`node dev/tools/pack.mjs <ver>`）后重启一次宿主；此后启停/
++   编辑全部热生效。两份副本（asar 源码树与 profile 实体）内容需保持一致。
++
++## 使用
++
++设置 → 插件 → MCP：从目录「添加」，按需改参数与环境变量，保存即启用；
++列表里可随时开关/编辑/删除。模型侧工具名形如 `mcp__<服务名>__<工具名>`。
++
++## 已知边界
++
++- 环境变量以明文存于本机 settings.yaml（单机桌面部署可接受；托管密钥应接
++  credentials 领域，暂缓）。
++- stdio 参数按空白切分；含空格的路径建议放在最后一段或自行加引号处理。
++- 目录清单是内置静态数据：新增条目编辑 `src/client.js` 的 `CATALOG` 后运行
++  `node dev/tools/build-mcp-catalog.mjs` 重建 bundle 并重启宿主。
++
++## 开发
++
++- 改浏览器半侧：编辑 `src/client.js` → 跑构建脚本 → 重启宿主（bundle 哈希变化）。
++- 改宿主半侧：直接编辑 `lib/index.js`，HMR 会热重载插件行。
+diff --git a/gui-assets/mcp-catalog/package.json b/gui-assets/mcp-catalog/package.json
+new file mode 100644
+index 0000000..b097734
+--- /dev/null
++++ b/gui-assets/mcp-catalog/package.json
+@@ -0,0 +1,22 @@
++{
++  "name": "@dsh-gui/mcp-catalog",
++  "description": "MCP server catalog with one-click configuration for dsh-gui (Phase 1): a host plugin that stores the user's MCP server list in a settings namespace and mounts/unmounts @deepseek-ai/dsh-mcp-client entries live, plus a browser half that contributes an 'MCP' tab to the Plugins settings section.",
++  "version": "0.1.0",
++  "type": "module",
++  "main": "lib/index.js",
++  "exports": {
++    ".": "./lib/index.js",
++    "./client": "./lib/client.js",
++    "./package.json": "./package.json"
++  },
++  "dsh": {
++    "client": {
++      "external": [
++        "react",
++        "@deepseek-ai/dsh-client-store"
++      ],
++      "platform": "web"
++    }
++  },
++  "license": "MIT"
++}
+diff --git a/gui-assets/mcp-catalog/src/client.js b/gui-assets/mcp-catalog/src/client.js
+new file mode 100644
+index 0000000..bf7b4b9
+--- /dev/null
++++ b/gui-assets/mcp-catalog/src/client.js
+@@ -0,0 +1,329 @@
++/* @dsh-gui/mcp-catalog — browser half (authored source).
++ * Built by dev/tools/build-mcp-catalog.mjs into lib/client.js (lazy-CJS factory).
++ * Externals are require()'d at materialization time; they are declared in this
++ * package's dsh.client.external so the module graph provisions them.
++ */
++const React = require("react");
++const { createSnapshotStore } = require("@deepseek-ai/dsh-client-runtime/client");
++
++const h = React.createElement;
++const PKG_ID = "@dsh-gui/mcp-catalog";
++/** Must match the host half's settingsNamespace("mcp-catalog"). */
++const NAMESPACE = "mcp-catalog";
++const NAME_RE = /^[A-Za-z0-9_-]{1,32}$/;
++
++/* ------------------------------------------------------------------ */
++/* Curated catalog: one-click templates. args/env stay editable after */
++/* insertion; env entries are plain strings stored in the local user  */
++/* settings.yaml (single-machine desktop deployment).                 */
++/* ------------------------------------------------------------------ */
++const CATALOG = [
++	{ key: "memory", title: "Memory 记忆图谱", desc: "基于知识图谱的长期记忆（官方参考实现）。", command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], envHint: "" },
++	{ key: "seq-think", title: "Sequential Thinking 序贯思考", desc: "把复杂问题拆解为可修订的思考步骤。", command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"], envHint: "" },
++	{ key: "everything", title: "Everything 官方演示", desc: "官方全功能测试服务器，用于验证 MCP 链路是否畅通。", command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"], envHint: "" },
++	{ key: "filesystem", title: "Filesystem 文件系统", desc: "让模型访问指定目录内的文件。添加后请在参数里填入允许的目录路径。", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "C:/path/to/allowed/dir"], envHint: "" },
++	{ key: "github", title: "GitHub API", desc: "仓库 / Issue / PR 操作。需要 GITHUB_TOKEN。", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], envHint: "GITHUB_TOKEN=" },
++	{ key: "brave-search", title: "Brave 搜索", desc: "网页与新闻搜索。需要 BRAVE_API_KEY。", command: "npx", args: ["-y", "@modelcontextprotocol/server-brave-search"], envHint: "BRAVE_API_KEY=" },
++	{ key: "puppeteer", title: "Puppeteer 浏览器自动化", desc: "驱动无头浏览器完成网页交互与截图。", command: "npx", args: ["-y", "@modelcontextprotocol/server-puppeteer"], envHint: "" },
++	{ key: "sqlite", title: "SQLite 查询", desc: "对指定数据库文件执行只读 SQL 与商业洞察。添加后请在参数里填入数据库路径。", command: "npx", args: ["-y", "@modelcontextprotocol/server-sqlite", "--db-path", "C:/path/to/db.sqlite"], envHint: "" }
++];
++
++function blankCustom() {
++	return { key: "__custom", title: "自定义服务器", desc: "手动填写 stdio 命令或 HTTP 地址。", command: "npx", args: [], envHint: "" };
++}
++
++/* ---------------------------- tiny helpers ---------------------------- */
++
++function uid() {
++	return "mcp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
++}
++
++function parseArgsText(text) {
++	return String(text || "").split(/\s+/).map((s) => s.trim()).filter((s) => s.length > 0);
++}
++
++function formatArgsText(args) {
++	return Array.isArray(args) ? args.join("\n") : "";
++}
++
++function parseEnvText(text) {
++	const env = {};
++	for (const rawLine of String(text || "").split(/\r?\n/)) {
++		const line = rawLine.trim();
++		if (!line || line.startsWith("#")) continue;
++		const eq = line.indexOf("=");
++		if (eq <= 0) continue;
++		const key = line.slice(0, eq).trim();
++		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
++		env[key] = line.slice(eq + 1);
++	}
++	return env;
++}
++
++function formatEnvText(env) {
++	return Object.entries(env || {}).map(([k, v]) => k + "=" + String(v)).join("\n");
++}
++
++function summarize(server) {
++	if (server.transport === "streamable-http") return String(server.url || "");
++	const parts = [server.command].concat(Array.isArray(server.args) ? server.args : []);
++	return parts.filter(Boolean).join(" ");
++}
++
++function validateServer(record, servers) {
++	const errors = [];
++	if (!NAME_RE.test(String(record.serverName || ""))) errors.push("服务名称须为 1-32 位字母/数字/_/-");
++	const others = servers.filter((s) => s.id !== record.id);
++	if (others.some((s) => s.serverName === record.serverName)) errors.push("服务名称与其他实例重复");
++	if (record.transport === "stdio") {
++		if (!String(record.command || "").trim()) errors.push("stdio 需要填写启动命令");
++	} else if (!String(record.url || "").trim()) {
++		errors.push("HTTP 需要填写服务器 URL");
++	}
++	return errors;
++}
++
++/* ------------------------------- styles ------------------------------- */
++
++const CSS = [
++	".dshgui-mcp-tab { max-width: 860px; font-size: 13px; color: inherit; }",
++	".dshgui-mcp-tab h3 { margin: 4px 0 2px; font-size: 15px; }",
++	".dshgui-mcp-hint { opacity: .65; margin: 0 0 14px; line-height: 1.6; }",
++	".dshgui-mcp-section-title { font-weight: 600; margin: 18px 0 8px; }",
++	".dshgui-mcp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }",
++	".dshgui-mcp-card { border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }",
++	".dshgui-mcp-card-title { font-weight: 600; display: flex; align-items: center; gap: 8px; justify-content: space-between; }",
++	".dshgui-mcp-card-desc { opacity: .7; line-height: 1.55; min-height: 34px; }",
++	".dshgui-mcp-btn { border: 1px solid color-mix(in srgb, currentColor 28%, transparent); background: transparent; color: inherit; border-radius: 8px; padding: 3px 10px; cursor: pointer; font-size: 12px; }",
++	".dshgui-mcp-btn:hover { border-color: color-mix(in srgb, currentColor 55%, transparent); }",
++	".dshgui-mcp-btn-primary { background: color-mix(in srgb, currentColor 12%, transparent); }",
++	".dshgui-mcp-btn-danger:hover { border-color: #e5534b; color: #e5534b; }",
++	".dshgui-mcp-row { display: flex; align-items: center; gap: 10px; border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; flex-wrap: wrap; }",
++	".dshgui-mcp-row-main { flex: 1 1 260px; min-width: 0; }",
++	".dshgui-mcp-row-name { font-weight: 600; display: flex; gap: 8px; align-items: center; }",
++	".dshgui-mcp-row-sub { opacity: .6; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
++	".dshgui-mcp-badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); opacity: .85; }",
++	".dshgui-mcp-badge-on { background: rgba(46, 160, 67, .16); border-color: rgba(46, 160, 67, .45); }",
++	".dshgui-mcp-form { border: 1px solid color-mix(in srgb, currentColor 26%, transparent); border-radius: 12px; padding: 14px 16px; margin-top: 10px; display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }",
++	".dshgui-mcp-field { display: flex; flex-direction: column; gap: 4px; }",
++	".dshgui-mcp-field-wide { grid-column: 1 / -1; }",
++	".dshgui-mcp-label { font-size: 12px; opacity: .75; }",
++	".dshgui-mcp-input, .dshgui-mcp-textarea { background: transparent; color: inherit; border: 1px solid color-mix(in srgb, currentColor 26%, transparent); border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 13px; width: 100%; box-sizing: border-box; }",
++	".dshgui-mcp-textarea { resize: vertical; min-height: 56px; font-family: ui-monospace, Consolas, monospace; }",
++	".dshgui-mcp-error { color: #e5534b; font-size: 12px; }",
++	".dshgui-mcp-note { opacity: .65; font-size: 12px; line-height: 1.6; margin: 2px 0 0; }",
++	".dshgui-mcp-actions { display: flex; gap: 8px; justify-content: flex-end; grid-column: 1 / -1; }",
++	".dshgui-mcp-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }"
++].join("\n");
++
++let styleInjected = false;
++function ensureStyles() {
++	if (styleInjected || typeof document === "undefined") return;
++	const el = document.createElement("style");
++	el.id = "dshgui-mcp-style";
++	el.textContent = CSS;
++	document.head.appendChild(el);
++	styleInjected = true;
++}
++
++/* ------------------------------ components ------------------------------ */
++
++function Field(props) {
++	return h("label", { className: "dshgui-mcp-field" + (props.wide ? " dshgui-mcp-field-wide" : "") },
++		h("span", { className: "dshgui-mcp-label" }, props.label),
++		props.textarea
++			? h("textarea", { className: "dshgui-mcp-textarea", value: props.value, placeholder: props.placeholder || "", onChange: (e) => props.onChange(e.target.value) })
++			: h("input", { className: "dshgui-mcp-input", value: props.value, placeholder: props.placeholder || "", onChange: (e) => props.onChange(e.target.value) }),
++		props.hint ? h("span", { className: "dshgui-mcp-note" }, props.hint) : null,
++		props.error ? h("span", { className: "dshgui-mcp-error" }, props.error) : null
++	);
++}
++
++function CatalogCard(props) {
++	return h("div", { className: "dshgui-mcp-card" },
++		h("div", { className: "dshgui-mcp-card-title" }, h("span", null, props.item.title),
++			h("button", { className: "dshgui-mcp-btn dshgui-mcp-btn-primary", onClick: props.onAdd }, "添加")),
++		h("div", { className: "dshgui-mcp-card-desc" }, props.item.desc),
++		h("div", { className: "dshgui-mcp-row-sub" }, summarize({ transport: "stdio", command: props.item.command, args: props.item.args }).slice(0, 90))
++	);
++}
++
++function ServerRow(props) {
++	const s = props.server;
++	return h("div", { className: "dshgui-mcp-row" },
++		h("label", { className: "dshgui-mcp-toggle", title: s.enabled ? "点击停用" : "点击启用" },
++			h("input", { type: "checkbox", checked: s.enabled === true, onChange: () => props.onToggle(s.id) }),
++			h("span", null, s.enabled ? "已启用" : "已停用")),
++		h("div", { className: "dshgui-mcp-row-main" },
++			h("div", { className: "dshgui-mcp-row-name" },
++				h("span", null, s.serverName),
++				h("span", { className: "dshgui-mcp-badge" + (s.enabled ? " dshgui-mcp-badge-on" : "") }, s.transport)),
++			h("div", { className: "dshgui-mcp-row-sub", title: summarize(s) }, summarize(s))),
++		h("button", { className: "dshgui-mcp-btn", onClick: () => props.onEdit(s) }, "编辑"),
++		h("button", { className: "dshgui-mcp-btn dshgui-mcp-btn-danger", onClick: () => props.onDelete(s.id) }, "删除")
++	);
++}
++
++function ServerForm(props) {
++	const d = props.draft;
++	const set = (patch) => props.onDraft(Object.assign({}, d, patch));
++	return h("div", { className: "dshgui-mcp-form" },
++		h("div", { className: "dshgui-mcp-section-title", style: { gridColumn: "1 / -1", margin: "0" } }, props.isNew ? "添加：" + d.title : "编辑：" + d.serverName),
++		h(Field, { label: "服务名称 serverName（工具前缀 mcp__<名称>__…）", value: d.serverName || "", onChange: (v) => set({ serverName: v.trim() }), error: props.errors.name }),
++		h("label", { className: "dshgui-mcp-field" },
++			h("span", { className: "dshgui-mcp-label" }, "传输方式"),
++			h("select", { className: "dshgui-mcp-input", value: d.transport, onChange: (e) => set({ transport: e.target.value }) },
++				h("option", { value: "stdio" }, "stdio（本地命令）"),
++				h("option", { value: "streamable-http" }, "streamable-http（远程 HTTP）"))),
++		d.transport === "stdio"
++			? h(Field, { label: "启动命令", value: d.command || "", placeholder: "npx", onChange: (v) => set({ command: v }), error: props.errors.command })
++			: h(Field, { label: "服务器 URL", value: d.url || "", placeholder: "http://localhost:3000/mcp", onChange: (v) => set({ url: v }), error: props.errors.url }),
++		h(Field, { label: "环境变量（每行 KEY=VALUE；保存在本机 settings.yaml）", value: d.envText, textarea: true, placeholder: props.envPlaceholder || "KEY=value", onChange: (v) => set({ envText: v }) }),
++		d.transport === "stdio"
++			? h(Field, { label: "参数（每行一个）", value: d.argsText, textarea: true, placeholder: "-y\n@modelcontextprotocol/server-filesystem", onChange: (v) => set({ argsText: v }) })
++			: h(Field, { label: "请求头（每行 KEY=VALUE，可选）", value: d.headersText || "", textarea: true, placeholder: "Authorization=Bearer xxx", onChange: (v) => set({ headersText: v }) }),
++		h(Field, { label: "工具调用超时 ms（可选，默认 60000）", value: d.timeoutText || "", onChange: (v) => set({ timeoutText: v }) }),
++		props.errors.global ? h("div", { className: "dshgui-mcp-error", style: { gridColumn: "1 / -1" } }, props.errors.global) : null,
++		h("div", { className: "dshgui-mcp-actions" },
++			h("button", { className: "dshgui-mcp-btn", onClick: props.onCancel }, "取消"),
++			h("button", { className: "dshgui-mcp-btn dshgui-mcp-btn-primary", disabled: props.saving, onClick: props.onSave }, props.saving ? "保存中…" : "保存并启用"))
++	);
++}
++
++function MCPCatalogTab(props) {
++	const snap = props.useCatalog(function pickAll(s) { return s; });
++	const servers = (snap && snap.servers) || [];
++	const writable = !snap || snap.writable !== false;
++	const status = snap ? snap.status : "loading";
++	const [draft, setDraft] = React.useState(null);
++	const [errors, setErrors] = React.useState({});
++	const [saving, setSaving] = React.useState(false);
++
++	function openFromTemplate(item) {
++		setErrors({});
++		setDraft({
++			isNew: true, title: item.title, id: uid(), key: item.key,
++			serverName: item.key.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 32),
++			transport: "stdio", command: item.command || "npx",
++			argsText: formatArgsText(item.args), envText: item.envHint || "",
++			url: "", headersText: "", timeoutText: ""
++		});
++	}
++	function openEdit(server) {
++		setErrors({});
++		setDraft({
++			isNew: false, id: server.id, title: server.serverName,
++			serverName: server.serverName, transport: server.transport || "stdio",
++			command: server.command || "", argsText: formatArgsText(server.args),
++			envText: formatEnvText(server.env), url: server.url || "",
++			headersText: formatEnvText(server.headers), timeoutText: server.toolCallTimeoutMs != null ? String(server.toolCallTimeoutMs) : ""
++		});
++	}
++	function buildRecord(d) {
++		const record = { id: d.id, serverName: d.serverName, transport: d.transport, enabled: true };
++		if (d.transport === "stdio") {
++			record.command = d.command.trim();
++			record.args = parseArgsText(d.argsText);
++			const env = parseEnvText(d.envText);
++			if (Object.keys(env).length > 0) record.env = env;
++		} else {
++			record.url = d.url.trim();
++			const headers = parseEnvText(d.headersText);
++			if (Object.keys(headers).length > 0) record.headers = headers;
++		}
++		const timeout = Number(d.timeoutText);
++		if (d.timeoutText && Number.isFinite(timeout)) record.toolCallTimeoutMs = timeout;
++		return record;
++	}
++	async function save() {
++		const record = buildRecord(draft);
++		const errs = {};
++		const nameErrors = validateServer(record, servers);
++		for (const message of nameErrors) {
++			if (message.indexOf("重复") >= 0) errs.global = message;
++			else if (message.indexOf("stdio") >= 0 || message.indexOf("HTTP") >= 0) errs.command = message, errs.url = errs.url || message;
++			else errs.name = errs.name || message;
++		}
++		if (Object.keys(errs).length > 0) { setErrors(errs); return; }
++		setSaving(true);
++		try {
++			const next = draft.isNew ? servers.concat([record]) : servers.map((s) => (s.id === record.id ? Object.assign({}, s, record) : s));
++			await props.writeServers(next);
++			setDraft(null);
++		} catch (error) {
++			setErrors({ global: "保存失败：" + (error && error.message ? error.message : String(error)) });
++		} finally {
++			setSaving(false);
++		}
++	}
++	async function toggle(id) {
++		try { await props.writeServers(servers.map((s) => (s.id === id ? Object.assign({}, s, { enabled: !(s.enabled === true) }) : s))); } catch (e) { console.warn("[mcp-catalog] toggle failed", e); }
++	}
++	async function remove(id) {
++		try { await props.writeServers(servers.filter((s) => s.id !== id)); } catch (e) { console.warn("[mcp-catalog] delete failed", e); }
++	}
++
++	if (status === "unavailable") {
++		return h("div", { className: "dshgui-mcp-tab" },
++			h("p", { className: "dshgui-mcp-hint" }, "设置服务当前不可用（可能处于记忆模式或宿主半侧未挂载）。请确认已通过用户 patch 层插入 mcp-catalog 行并重启宿主。"));
++	}
++
++	const configuredKeys = new Set(servers.map((s) => s.serverName));
++
++	return h("div", { className: "dshgui-mcp-tab" },
++		h("h3", null, "MCP 服务器"),
++		h("p", { className: "dshgui-mcp-hint" },
++			"启用的服务器会即时挂载为模型工具（命名形如 mcp__服务名__工具名），改动无需重启。",
++			writable ? "" : "（当前文档只读，改动不会被保存。）"),
++		servers.length > 0 ? h("div", { className: "dshgui-mcp-section-title" }, "我的实例") : null,
++		servers.map((s) => h(ServerRow, { key: s.id, server: s, writable: writable, onToggle: toggle, onEdit: openEdit, onDelete: remove })),
++		servers.length === 0 ? h("p", { className: "dshgui-mcp-hint" }, "还没有实例。从下方目录一键添加，或选择「自定义服务器」。") : null,
++		h("div", { className: "dshgui-mcp-section-title" }, "目录"),
++		h("div", { className: "dshgui-mcp-grid" },
++			CATALOG.concat([blankCustom()]).map((item) => h(CatalogCard, { key: item.key, item: item, onAdd: () => openFromTemplate(item) }))),
++		draft ? h(ServerForm, {
++			draft: draft, errors: errors, saving: saving, isNew: !!draft.isNew,
++			envPlaceholder: draft.envHint || "",
++			onDraft: setDraft, onSave: save, onCancel: () => setDraft(null)
++		}) : null
++	);
++}
++
++/* ------------------------- plugin wiring ------------------------- */
++
++const inject = ["slots", "settingsScope"];
++
++function apply(ctx) {
++	ensureStyles();
++	const scope = ctx.settingsScope.bind({ namespace: NAMESPACE });
++	const store = createSnapshotStore({ status: "loading", writable: true, servers: [] });
++	const project = () => {
++		const snapshot = scope.getSnapshot();
++		return {
++			status: snapshot.status,
++			writable: snapshot.writable,
++			servers: snapshot.status === "ready" && snapshot.value && Array.isArray(snapshot.value.servers) ? snapshot.value.servers : []
++		};
++	};
++	const refresh = () => store.set(project());
++	ctx.effect(() => scope.subscribe(refresh), "mcp-catalog: settings mirror");
++	refresh();
++
++	async function writeServers(next) {
++		await scope.set("servers", next);
++	}
++
++	ctx.effect(() => ctx.slots.inject("settings.plugins.tab", () => ctx.slots.register({
++		name: "settings.plugins.tab",
++		id: "mcp-catalog",
++		order: 20,
++		label: "MCP",
++		inject: () => ({ catalog: store })
++	}, function MCPCatalogEntry(props) {
++		const useCatalog = props.useCatalog || function fallback() { return store.getSnapshot(); };
++		return h(MCPCatalogTab, { useCatalog: useCatalog, writeServers: writeServers });
++	})), "mcp-catalog: plugins tab");
++}
++
++exports.apply = apply;
++exports.inject = inject;
+diff --git a/gui-assets/plugin-market/package.json b/gui-assets/plugin-market/package.json
+new file mode 100644
+index 0000000..805f296
+--- /dev/null
++++ b/gui-assets/plugin-market/package.json
+@@ -0,0 +1,22 @@
++{
++  "name": "@dsh-gui/plugin-market",
++  "description": "插件市场：内置可选插件的浏览、一键启停与持久化（dsh-gui）。宿主半侧挂载/卸载受管 loader 条目并持久化到 plugin-market 设置命名空间；浏览器半侧在 设置→插件→市场 提供卡片式市场页。",
++  "version": "1.1.0",
++  "type": "module",
++  "main": "lib/index.js",
++  "exports": {
++    ".": "./lib/index.js",
++    "./client": "./lib/client.js",
++    "./package.json": "./package.json"
++  },
++  "dsh": {
++    "client": {
++      "external": [
++        "react",
++        "@deepseek-ai/dsh-client-store"
++      ],
++      "platform": "web"
++    }
++  },
++  "license": "MIT"
++}
+diff --git a/gui-assets/reasoning-autopilot/package.json b/gui-assets/reasoning-autopilot/package.json
+new file mode 100644
+index 0000000..faf5eb1
+--- /dev/null
++++ b/gui-assets/reasoning-autopilot/package.json
+@@ -0,0 +1,12 @@
++{
++  "name": "@dsh-gui/reasoning-autopilot",
++  "description": "Reasoning autopilot for dsh-gui: whenever a hand-declared provider/model appears in the llm-pi-ai settings without thinking declarations, inject default reasoningEfforts plus gateway-safe compat flags (system role instead of developer, empty reasoning_content replay for DeepSeek-family ids); restore agent-default-model.reasoningEffort when the selected model can carry it. Idempotent, revision-guarded, converges silently.",
++  "version": "0.1.0",
++  "type": "module",
++  "main": "lib/index.js",
++  "exports": {
++    ".": "./lib/index.js",
++    "./package.json": "./package.json"
++  },
++  "license": "MIT"
++}
+\ No newline at end of file
+-- 
+2.53.0.windows.1
+

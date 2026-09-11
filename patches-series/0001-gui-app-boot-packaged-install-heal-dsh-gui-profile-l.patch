@@ -1,0 +1,593 @@
+From ffeb9ba12c012ff696d6d9e5d495390dfc066c9a Mon Sep 17 00:00:00 2001
+From: dsh-gui <dsh-gui@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 06:55:15 +0800
+Subject: [PATCH 1/6] gui(app-boot): packaged-install heal + @dsh-gui profile
+ layer deploy
+
+- healProfilesModuleFallback: seed junction preference with byte-freshness
+  (manifest + runtime entry + served client bundle), materialization fallback
+  on win32, per-package resilience, completion stamp
+- client web plugins from asar @dsh-gui scope folded into links
+- native packages from app.asar.unpacked added to links
+- ensureGuiBrowserPluginsProfileLayer: deploy every @dsh-gui browser plugin
+  (entity copy + junction + byte drift refresh) into the profile layer
+- keep ensureMcpCatalogPatchEntry for the mcp-catalog host-half mount
+---
+ packages/boot/app-boot/src/profile.ts | 477 ++++++++++++++++++++++++--
+ 1 file changed, 455 insertions(+), 22 deletions(-)
+
+diff --git a/packages/boot/app-boot/src/profile.ts b/packages/boot/app-boot/src/profile.ts
+index 64f6587..fb7ccfa 100644
+--- a/packages/boot/app-boot/src/profile.ts
++++ b/packages/boot/app-boot/src/profile.ts
+@@ -47,6 +47,13 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
+ /** Profile-private package links projected into its pnpm-managed node_modules. */
+ const PROFILE_MODULE_FALLBACK_DIR = '.dsh-module-fallback'
+ 
++/**
++ * dsh-gui: stamp filename recording a completed fallback materialization.
++ * Written once at the end of a heal run; a stamped package is re-verified by
++ * byte comparison on every boot, so the stamp only marks "this run finished".
++ */
++const HEAL_STAMP_FILENAME = '.dsh-heal-stamp.json'
++
+ /** Installation-owned defaults used when a shipped profile is first opened. */
+ export interface ProfileTemplate {
+   /** Ordered bundle layer list. */
+@@ -272,6 +279,147 @@ function ensureProfileSymlink(link: string, target: string): void {
+   ensureSymlink(link, target)
+ }
+ 
++// ---------------------------------------------------------------------------
++// dsh-gui: packaged-install heal (seed junctions, byte freshness, native and
++// client-plugin coverage). The generic symlink fallback above resolves links
++// straight into the running application archive; a packaged desktop build
++// ships the runtime inside an Electron app.asar, whose interior paths Node's
++// ESM loader cannot resolve through a junction (the child runtime runs under
++// ELECTRON_RUN_AS_NODE). The helpers below let the fallback point at the
++// shipped real-file seed (resources/dsh-profile-seed) whenever its bytes match
++// the running closure, and materialize real copies otherwise — plus the MCP
++// catalog browser half every profile needs on its node_modules layer.
++// ---------------------------------------------------------------------------
++
++/** Read the fallback completion stamp, or `undefined` when absent or corrupt. */
++function readHealStamp(modulesDir: string): Set<string> | undefined {
++  try {
++    const stamp = JSON.parse(readFileSync(join(modulesDir, HEAL_STAMP_FILENAME), 'utf8'))
++    if (stamp === null || typeof stamp !== 'object' || !Array.isArray(stamp.packages)) return undefined
++    return new Set(stamp.packages)
++  } catch {
++    return undefined
++  }
++}
++
++/** Whether two package.json files describe the same package (name + version). */
++function manifestsMatch(left: string, right: string): boolean {
++  try {
++    const a = JSON.parse(readFileSync(left, 'utf8'))
++    const b = JSON.parse(readFileSync(right, 'utf8'))
++    return a?.name === b?.name && a?.version === b?.version
++  } catch {
++    return false
++  }
++}
++
++/** Resolve a package's `exports["./client"]` to a relative path (string or one-level `{ default }` form). */
++function clientBundleRelOf(pkg: unknown): string | undefined {
++  const exportsField = pkg !== undefined && pkg !== null && typeof pkg === 'object' ? (pkg as Record<string, unknown>).exports : undefined
++  if (exportsField === undefined || exportsField === null || typeof exportsField !== 'object') return undefined
++  const client = (exportsField as Record<string, unknown>)['./client']
++  if (client === undefined) return undefined
++  if (typeof client === 'string') return client
++  if (typeof client === 'object' && client !== null) {
++    const fallback = (client as Record<string, unknown>).default
++    if (typeof fallback === 'string') return fallback
++  }
++  return undefined
++}
++
++/** Resolve a package's runtime entry (exports["."] default, else `main`) to a relative path. */
++function entryRelOf(pkgDir: string): string | undefined {
++  try {
++    const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
++    const exportsField = pkg !== undefined && pkg !== null && typeof pkg === 'object' ? pkg.exports : undefined
++    const dot = exportsField !== undefined && exportsField !== null && typeof exportsField === 'object' ? exportsField['.'] : undefined
++    let rel: string | undefined
++    if (typeof dot === 'string') rel = dot
++    else if (dot !== undefined && dot !== null && typeof dot === 'object' && typeof dot.default === 'string') rel = dot.default
++    if ((rel === undefined || rel === '') && typeof pkg?.main === 'string') rel = pkg.main
++    if (typeof rel !== 'string' || rel === '') return undefined
++    return rel.replace(/^\.\//, '')
++  } catch {
++    return undefined
++  }
++}
++
++/**
++ * Whether two package copies are interchangeable: manifest (name+version)
++ * AND the bytes that actually run — the served client bundle for web client
++ * plugins, and the runtime entry for every package. A stale seed can carry
++ * the same manifest version with an outdated bundle, which a version-only
++ * check would wrongly treat as fresh (the upgrade-machine
++ * "client-modules: missed the module table" class). Fully defensive: any
++ * unexpected error reports "not fresh" (the materialize direction), so a
++ * heal bug can never brick the boot.
++ */
++function closureFresh(
++  linkDir: string, targetDir: string, packageName: string,
++  clientPluginBundles: ReadonlyMap<string, string>,
++): boolean {
++  try {
++    if (!manifestsMatch(join(linkDir, 'package.json'), join(targetDir, 'package.json'))) return false
++    const rel = clientPluginBundles.get(packageName)
++    if (rel !== undefined && !readFileSync(join(linkDir, rel)).equals(readFileSync(join(targetDir, rel)))) return false
++    const entry = entryRelOf(targetDir) ?? entryRelOf(linkDir)
++    if (entry === undefined) return true
++    return readFileSync(join(linkDir, entry)).equals(readFileSync(join(targetDir, entry)))
++  } catch {
++    return false
++  }
++}
++
++/** Recursively copy one package directory (asar-aware source reads). */
++function copyPackageDir(source: string, target: string): void {
++  mkdirSync(target, { recursive: true })
++  for (const entry of readdirSync(source)) {
++    const s = join(source, entry)
++    const t = join(target, entry)
++    if (lstatSync(s).isDirectory()) copyPackageDir(s, t)
++    else {
++      mkdirSync(dirname(t), { recursive: true })
++      writeFileSync(t, readFileSync(s))
++    }
++  }
++}
++
++/** Copy files from `source` into an existing `target`, never overwriting. */
++function fillMissingFiles(source: string, target: string): void {
++  if (!existsSync(target)) return
++  for (const entry of readdirSync(source)) {
++    const s = join(source, entry)
++    const t = join(target, entry)
++    if (lstatSync(s).isDirectory()) fillMissingFiles(s, t)
++    else if (!existsSync(t)) {
++      mkdirSync(dirname(t), { recursive: true })
++      writeFileSync(t, readFileSync(s))
++    }
++  }
++}
++
++/**
++ * Desktop layout roots derived from the install anchor:
++ * `<exe>/app.asar.unpacked/node_modules` (native binaries) and
++ * `<exe>/dsh-profile-seed` (the shipped real-file closure copy).
++ */
++function guiDesktopDirs(installAnchor: string): { unpackedNm: string; seedNm: string; seedPresent: boolean } {
++  const exeDir = dirname(dirname(dirname(dirname(dirname(installAnchor)))))
++  const unpackedNm = join(exeDir, 'app.asar.unpacked', 'node_modules')
++  const seedNm = join(exeDir, 'dsh-profile-seed', 'node_modules')
++  const seedPresent = existsSync(join(exeDir, 'dsh-profile-seed', '.seed.json'))
++  return { unpackedNm, seedNm, seedPresent }
++}
++
++/** Whether an optional package name targets a platform this process never loads. */
++function isForeignPlatformPackage(name: string): boolean {
++  const platform = process.platform
++  if (platform === 'win32' && /-win32[-.]/.test(name)) return false
++  if (platform === 'linux' && /-linux[-.]/.test(name)) return false
++  if (platform === 'darwin' && /-darwin[-.]/.test(name)) return false
++  return /(^|[-.])(linux|darwin|win32|musl|freebsd|android)([-.]|$)/.test(name)
++}
++
+ /** Package names represented by owned symlinks below one fallback node_modules. */
+ function ownedPackageNames(modulesDir: string): string[] {
+   return readdirSync(modulesDir, { withFileTypes: true }).flatMap((entry) => {
+@@ -469,7 +617,12 @@ function profileDependencyNames(manifest: ProfileManifest): string[] {
+ /** Resolve the installation generation that every profile must find through the fallback directory. */
+ function resolveModuleFallbackEntries(
+   installAnchor: string,
+-): { entries: ModuleFallbackEntry[]; packageNames: ReadonlySet<string> } {
++): {
++  entries: ModuleFallbackEntry[]
++  packageNames: ReadonlySet<string>
++  clientPluginBundles: ReadonlyMap<string, string>
++  desktop: ReturnType<typeof guiDesktopDirs>
++} {
+   const appManifest = readModuleFallbackManifest(installAnchor)
+   const links = new Map<string, string>()
+   /* v8 ignore next -- a real app manifest always declares its name */
+@@ -493,6 +646,47 @@ function resolveModuleFallbackEntries(
+       queue.push({ anchor: manifestPath, manifest: readModuleFallbackManifest(manifestPath) })
+     }
+   }
++  // dsh-gui: packaged layouts ship native modules (node-pty, @img/sharp-win32-x64,
++  // ...) under resources/app.asar.unpacked, which the closure walk above cannot
++  // see (it probes the asar's own node_modules only). Add them explicitly so the
++  // fallback covers the complete dependency set. Optional platform bindings for
++  // other operating systems are skipped — they are never loaded here and are
++  // excluded from the shipped seed as well, so closure, seed and fallback agree.
++  const desktop = guiDesktopDirs(installAnchor)
++  if (existsSync(desktop.unpackedNm)) for (const entry of readdirSync(desktop.unpackedNm)) {
++    if (entry.startsWith('.')) continue
++    const full = join(desktop.unpackedNm, entry)
++    if (entry.startsWith('@')) for (const sub of readdirSync(full)) {
++      const subFull = join(full, sub)
++      if (!links.has(`${entry}/${sub}`) && !isForeignPlatformPackage(sub) && existsSync(join(subFull, 'package.json'))) links.set(`${entry}/${sub}`, subFull)
++    } else if (!links.has(entry) && !isForeignPlatformPackage(entry) && existsSync(join(full, 'package.json'))) links.set(entry, full)
++  }
++  // dsh-gui: web client plugins resolve through createRequire(profile baseUrl),
++  // not the server closure, so track the browser bundle each one serves — its
++  // bytes (not the manifest version) decide fallback freshness.
++  const clientPluginBundles = new Map<string, string>()
++  {
++    const asarNm = dirname(dirname(dirname(installAnchor)))
++    const scopeDir = join(asarNm, '@deepseek-ai')
++    if (existsSync(scopeDir)) for (const name of readdirSync(scopeDir)) {
++      const pkgDir = join(scopeDir, name)
++      const pkgJsonPath = join(pkgDir, 'package.json')
++      if (!existsSync(pkgJsonPath)) continue
++      let pkg: unknown
++      try {
++        pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8'))
++      } catch {
++        continue
++      }
++      const dsh = pkg !== null && typeof pkg === 'object' ? (pkg as Record<string, unknown>).dsh : undefined
++      const client = dsh !== null && typeof dsh === 'object' ? (dsh as Record<string, unknown>).client : undefined
++      const platform = client !== null && typeof client === 'object' ? (client as Record<string, unknown>).platform : undefined
++      if (platform !== 'web') continue
++      if (!links.has(`@deepseek-ai/${name}`)) links.set(`@deepseek-ai/${name}`, pkgDir)
++      const bundleRel = clientBundleRelOf(pkg)
++      if (bundleRel !== undefined) clientPluginBundles.set(`@deepseek-ai/${name}`, bundleRel)
++    }
++  }
+   const entries = !isPackagedExecutable()
+     ? [...links].map(([packageName, packageDir]) => ({ kind: 'symlink' as const, packageName, packageDir }))
+     : [...links].flatMap(([packageName, packageDir]) => {
+@@ -501,30 +695,51 @@ function resolveModuleFallbackEntries(
+         ? []
+         : [{ kind: 'proxy' as const, packageName, version: source.version, targets: source.targets }]
+     })
+-  return { entries, packageNames: new Set(links.keys()) }
++  return { entries, packageNames: new Set(links.keys()), clientPluginBundles, desktop }
++}
++
++/** Extra state the dsh-gui freshness/heal checks need for symlink entries. */
++interface GuiHealContext {
++  clientPluginBundles: ReadonlyMap<string, string>
++  desktop: ReturnType<typeof guiDesktopDirs>
+ }
+ 
+-/** Return whether one existing fallback entry already matches its resolved installation generation. */
+-function moduleFallbackEntryCurrent(modulesDir: string, entry: ModuleFallbackEntry): boolean {
++/**
++ * Return whether one existing fallback entry already matches its resolved
++ * installation generation. Symlink entries carry the dsh-gui freshness rules:
++ * a stamped entry whose bytes (manifest, runtime entry, served client bundle)
++ * match the running closure is current regardless of whether the link points
++ * at the shipped seed or at a materialized copy — both are real directories
++ * the ESM loader resolves, unlike an archive interior path.
++ */
++function moduleFallbackEntryCurrent(modulesDir: string, entry: ModuleFallbackEntry, gui?: GuiHealContext): boolean {
+   const link = join(modulesDir, entry.packageName)
+   try {
+     const stat = lstatSync(link)
+-    if (entry.kind === 'symlink') {
+-      return stat.isSymbolicLink() && readlinkSync(link) === entry.packageDir
++    if (entry.kind === 'proxy') {
++      if (!stat.isDirectory()) return false
++      const existing = readModuleProxyRecord(link)
++      return existing?.version === entry.version
++        && JSON.stringify(existing.dsh?.moduleFallback?.targets) === JSON.stringify(entry.targets)
++        && Object.keys(entry.targets).every((_, index) => existsSync(join(link, `entry-${index}.js`)))
+     }
++    if (gui === undefined) return stat.isSymbolicLink() && readlinkSync(link) === entry.packageDir
++    // dsh-gui: a stamped real directory (seed junction or materialized copy)
++    // is current when its bytes match the running closure. Anything else —
++    // missing stamp, stale bytes, an old-style symlink straight into the
++    // archive — falls through to the heal, which re-points or materializes.
+     if (!stat.isDirectory()) return false
+-    const existing = readModuleProxyRecord(link)
+-    return existing?.version === entry.version
+-      && JSON.stringify(existing.dsh?.moduleFallback?.targets) === JSON.stringify(entry.targets)
+-      && Object.keys(entry.targets).every((_, index) => existsSync(join(link, `entry-${index}.js`)))
++    const stamp = readHealStamp(modulesDir)
++    if (stamp === undefined || !stamp.has(entry.packageName)) return false
++    return closureFresh(link, entry.packageDir, entry.packageName, gui.clientPluginBundles)
+   } catch {
+     return false
+   }
+ }
+ 
+ /** Return whether every required fallback entry is already ready for this installation. */
+-function moduleFallbackCurrent(modulesDir: string, entries: readonly ModuleFallbackEntry[]): boolean {
+-  return entries.every(entry => moduleFallbackEntryCurrent(modulesDir, entry))
++function moduleFallbackCurrent(modulesDir: string, entries: readonly ModuleFallbackEntry[], gui?: GuiHealContext): boolean {
++  return entries.every(entry => moduleFallbackEntryCurrent(modulesDir, entry, gui))
+ }
+ 
+ /** Inputs for {@link healProfilesModuleFallback}. */
+@@ -542,10 +757,15 @@ export interface ProfileModuleFallbackOptions {
+  * `$DSH_HOME/profiles/node_modules` mirrors the dsh installation dependency
+  * closure. Plain Node writes symlinks; a packaged executable writes ESM
+  * proxies under a cross-process lock because operating-system links cannot
+- * enter pkg's virtual filesystem. Missing packages carried only by selected
+- * bundles are linked through a profile-owned directory into that profile's
+- * `node_modules`; pnpm-managed entries remain authoritative, and another
+- * profile's links cannot change its resolution.
++ * enter pkg's virtual filesystem. dsh-gui desktop builds run the runtime as a
++ * plain Node child of Electron with the closure inside an app.asar: there the
++ * healer prefers a junction into the shipped real-file seed when its bytes
++ * match the running closure, keeps an already-fresh materialized copy, and
++ * materializes real directories otherwise — a junction into the archive is
++ * never written because Node's ESM loader cannot resolve it. Missing packages
++ * carried only by selected bundles are linked through a profile-owned
++ * directory into that profile's `node_modules`; pnpm-managed entries remain
++ * authoritative, and another profile's links cannot change its resolution.
+  * @param options - installation anchor, optional loaded profile, and Harness home.
+  * @returns settlement after the shared fallback and profile-local links are current.
+  */
+@@ -554,27 +774,128 @@ export async function healProfilesModuleFallback(options: ProfileModuleFallbackO
+   const profilesDir = join(home, PROFILES_DIR)
+   const modulesDir = join(profilesDir, 'node_modules')
+   mkdirSync(modulesDir, { recursive: true })
+-  const { entries, packageNames } = resolveModuleFallbackEntries(installAnchor)
+-  if (!moduleFallbackCurrent(modulesDir, entries)) {
++  const { entries, packageNames, clientPluginBundles, desktop } = resolveModuleFallbackEntries(installAnchor)
++  const gui: GuiHealContext | undefined
++    = process.platform === 'win32' && !isPackagedExecutable() && desktop.seedPresent
++      ? { clientPluginBundles, desktop }
++      : clientPluginBundles.size > 0 ? { clientPluginBundles, desktop } : undefined
++  if (!moduleFallbackCurrent(modulesDir, entries, gui)) {
+     await withFileLock(modulesDir, () => {
+-      if (!moduleFallbackCurrent(modulesDir, entries)) healProfilesModuleFallbackLocked(entries, modulesDir)
++      if (!moduleFallbackCurrent(modulesDir, entries, gui)) healProfilesModuleFallbackLocked(entries, modulesDir, gui)
+       return Promise.resolve()
+     })
+   }
+   if (profile !== undefined) healProfileModuleFallback(profile, packageNames)
+ }
+ 
+-/** Heal one module-fallback generation while the cross-process writer lock is held. */
+-function healProfilesModuleFallbackLocked(entries: readonly ModuleFallbackEntry[], modulesDir: string): void {
++/**
++ * Heal one module-fallback generation while the cross-process writer lock is
++ * held. Proxy entries keep the generic materialization; symlink entries take
++ * the dsh-gui desktop path (seed junction → fresh-copy keep → materialize)
++ * whenever a shipped seed can vouch for the package, and the plain archive
++ * symlink otherwise.
++ */
++function healProfilesModuleFallbackLocked(entries: readonly ModuleFallbackEntry[], modulesDir: string, gui?: GuiHealContext): void {
++  const { unpackedNm, seedNm, seedPresent } = gui?.desktop
++    ?? { unpackedNm: '', seedNm: '', seedPresent: false }
++  const stamp = gui === undefined ? undefined : readHealStamp(modulesDir)
+   for (const entry of entries) {
+     const link = join(modulesDir, entry.packageName)
+     mkdirSync(dirname(link), { recursive: true })
+     if (entry.kind === 'proxy') {
+       ensureModuleProxy(link, entry.packageName, entry.version, entry.targets)
+-    } else {
++      continue
++    }
++    if (gui === undefined) {
+       ensureSymlink(link, entry.packageDir)
++      continue
++    }
++    // dsh-gui desktop path. The stamp short-circuits a verified-fresh entry;
++    // the closureFresh byte check (not the stamp alone) is what gates the skip.
++    try {
++      if (stamp !== undefined && stamp.has(entry.packageName) && existsSync(join(link, 'package.json'))
++        && closureFresh(link, entry.packageDir, entry.packageName, gui.clientPluginBundles)) continue
++      // Prefer the shipped seed: a junction into a real directory is
++      // ESM-resolvable and costs no copy. Only a seed package whose manifest
++      // AND bytes match the running closure qualifies; an in-place app update
++      // with a stale seed falls through to materialization instead.
++      const seedPkg = join(seedNm, entry.packageName)
++      if (seedPresent && existsSync(join(seedPkg, 'package.json'))
++        && closureFresh(seedPkg, entry.packageDir, entry.packageName, gui.clientPluginBundles)) {
++        let existing: import('node:fs').Stats | undefined
++        try {
++          existing = lstatSync(link)
++        } catch {
++          existing = undefined
++        }
++        if (existing !== undefined && existing.isSymbolicLink()) {
++          try {
++            if (readlinkSync(link) === seedPkg) continue
++          } catch { /* broken link */ }
++          unlinkSync(link)
++        } else if (existing !== undefined) {
++          // A pre-existing materialized directory (legacy install) is replaced
++          // by the seed junction; Windows rmSync can hit transient locks
++          // (Defender / indexer), so retry and keep a complete directory
++          // rather than failing the boot.
++          try {
++            rmSync(link, { force: true, recursive: true, maxRetries: 5, retryDelay: 200 })
++          } catch (error) {
++            console.warn(`dsh-app-boot: heal could not replace ${entry.packageName} with the seed junction (keeping the existing copy): ${error instanceof Error ? error.message : String(error)}`)
++            continue
++          }
++        }
++        ensureSymlink(link, seedPkg)
++        continue
++      }
++      // A complete-looking legacy directory with no seed to vouch for it is
++      // kept only when its bytes already match the running closure.
++      if (!seedPresent && existsSync(join(link, 'package.json'))
++        && closureFresh(link, entry.packageDir, entry.packageName, gui.clientPluginBundles)) continue
++      if (process.platform !== 'win32') {
++        ensureSymlink(link, entry.packageDir)
++        continue
++      }
++      // Windows: a junction whose target lives inside app.asar cannot be
++      // followed by Node's ESM resolver, so materialize a real directory
++      // copy. A junction is always removed with unlinkSync — rmSync against a
++      // junction is unsafe (it can follow the link and wipe the target, which
++      // may be the shipped profile seed).
++      let existing: import('node:fs').Stats | undefined
++      try {
++        existing = lstatSync(link)
++      } catch {
++        existing = undefined
++      }
++      if (existing !== undefined && existing.isSymbolicLink()) {
++        try {
++          unlinkSync(link)
++        } catch { /* keep it */ }
++      } else if (existing !== undefined) {
++        try {
++          rmSync(link, { force: true, recursive: true, maxRetries: 5, retryDelay: 200 })
++        } catch (error) {
++          console.warn(`dsh-app-boot: heal could not remove stale ${entry.packageName} (skipping materialize this boot; will retry next boot): ${error instanceof Error ? error.message : String(error)}`)
++          continue
++        }
++      }
++      copyPackageDir(entry.packageDir, link)
++      // The archive closure cannot see files that live only under
++      // app.asar.unpacked (native runners / worker scripts; their manifests
++      // stay packed), so merge them when the package has an unpacked copy.
++      const unpackedPkg = join(unpackedNm, entry.packageName)
++      if (existsSync(unpackedPkg) && lstatSync(unpackedPkg).isDirectory()) fillMissingFiles(unpackedPkg, link)
++    } catch (error) {
++      console.warn(`dsh-app-boot: heal failed for ${entry.packageName} (skipping this boot; will retry next boot): ${error instanceof Error ? error.message : String(error)}`)
+     }
+   }
++  if (gui === undefined) return
++  try {
++    writeFileSync(join(modulesDir, HEAL_STAMP_FILENAME), JSON.stringify({ packages: entries.map(entry => entry.packageName) }, undefined, 2), 'utf8')
++  } catch (error) {
++    // A missing stamp only costs the next boot a re-materialization.
++    console.warn(`dsh-app-boot: heal stamp write failed (non-fatal): ${error instanceof Error ? error.message : String(error)}`)
++  }
+ }
+ 
+ /** Collect the first resolvable package directory for each dependency name. */
+@@ -649,6 +970,112 @@ function healProfileModuleFallback(profile: Profile, installationPackageNames: R
+   }
+ }
+ 
++/**
++ * dsh-gui: deploy the @dsh-gui/mcp-catalog browser half into one profile so
++/**
++ * dsh-gui: deploy EVERY @dsh-gui browser plugin (dsh.client.platform ===
++ * "web") from the installation's @dsh-gui scope into one profile so its UI
++ * appears on every machine (fresh install and upgrade alike) without manual
++ * steps. The plugins are dual-anchored: the host half resolves from the
++ * installation tree (app.asar node_modules), while the client scanner
++ * discovers the browser half through createRequire(profile baseUrl) — i.e.
++ * only from the profile layer. For each such package this maintains: an
++ * entity copy under <profile>/<name>, and a junction at
++ * <profile>/node_modules/@dsh-gui/<name> -> entity. (Host-half mounting is
++ * NOT done here — bundles that need a default mount carry their own insert
++ * row, e.g. mcp-catalog below and plugin-market via the web-app patch.)
++ * Fully defensive: any failure logs and leaves the profile untouched — a
++ * deployment hiccup must never brick boot. Idempotent: an already-current
++ * entity/junction is left exactly as-is.
++ * @param installAnchor - the installation manifest path (app package.json).
++ * @param profileDir - the profile directory to deploy into.
++ */
++function ensureGuiBrowserPluginsProfileLayer(installAnchor: string, profileDir: string): void {
++  const asarNm = dirname(dirname(dirname(installAnchor)))
++  const scopeDir = join(asarNm, '@dsh-gui')
++  if (!existsSync(scopeDir)) return
++  for (const name of readdirSync(scopeDir)) {
++    const srcPkg = join(scopeDir, name)
++    if (!existsSync(join(srcPkg, 'package.json'))) continue
++    let platform: unknown
++    try {
++      const pkg = JSON.parse(readFileSync(join(srcPkg, 'package.json'), 'utf8'))
++      platform = pkg?.dsh?.client?.platform
++    } catch { continue }
++    if (platform !== 'web') continue
++    try { deployGuiBrowserHalf(srcPkg, profileDir, name) } catch (error) {
++      console.warn(`dsh-app-boot: @dsh-gui/${name} profile deploy failed: ${error instanceof Error ? error.message : String(error)}`)
++    }
++  }
++  // Patch insert: mount the mcp-catalog host half (creates the loader entry
++  // the client scan iterates). Never duplicates an existing row. Other
++  // @dsh-gui host halves are mounted by bundle patches (e.g. plugin-market
++  // rides the web-app patch), so they need no profile-layer row.
++  try {
++    ensureMcpCatalogPatchEntry(profileDir)
++  } catch (error) {
++    console.warn(`dsh-app-boot: mcp-catalog patch insert failed: ${error instanceof Error ? error.message : String(error)}`)
++  }
++}
++
++/** Entity copy + profile node_modules junction for one browser-half package. */
++function deployGuiBrowserHalf(srcPkg: string, profileDir: string, name: string): void {
++  // 1) entity copy: refresh only when the served bundle bytes drift (a
++  // version number can stay equal while content changes — same lesson as the
++  // heal closureFresh gate).
++  const entity = join(profileDir, name)
++  const servedBundle = join('lib', 'client.js')
++  let entityCurrent = false
++  try {
++    entityCurrent = existsSync(join(entity, servedBundle))
++      && readFileSync(join(entity, servedBundle)).equals(readFileSync(join(srcPkg, servedBundle)))
++  } catch {
++    entityCurrent = false
++  }
++  if (!entityCurrent) {
++    try {
++      if (existsSync(entity)) rmSync(entity, { force: true, recursive: true, maxRetries: 5, retryDelay: 200 })
++    } catch { /* keep old copy */ }
++    try {
++      copyPackageDir(srcPkg, entity)
++    } catch (error) {
++      console.warn(`dsh-app-boot: @dsh-gui/${name} entity copy failed (browser half may be stale): ${error instanceof Error ? error.message : String(error)}`)
++    }
++  }
++  // 2) junction at the profile node_modules scope (client scan anchor).
++  try {
++    const nmScope = join(profileDir, 'node_modules', '@dsh-gui')
++    mkdirSync(nmScope, { recursive: true })
++    ensureSymlink(join(nmScope, name), entity)
++  } catch (error) {
++    console.warn(`dsh-app-boot: @dsh-gui/${name} junction failed (browser half may be undiscoverable): ${error instanceof Error ? error.message : String(error)}`)
++  }
++}
++
++/** Append the mcp-catalog insert row to a profile's cordis.patch.yml (idempotent; handles the empty `[]` template). */
++function ensureMcpCatalogPatchEntry(profileDir: string): void {
++  const patchPath = join(profileDir, PROFILE_PATCH_FILENAME)
++  if (!existsSync(patchPath)) writeFileSync(patchPath, PROFILE_PATCH_TEMPLATE)
++  const raw = readFileSync(patchPath, 'utf8')
++  if (raw.includes('mcp-catalog')) return
++  const insert = [
++    '',
++    '# dsh-gui: MCP catalog UI (browser half) — one-click MCP server management.',
++    '- insert:',
++    '    - id: mcp-catalog',
++    "      name: '@dsh-gui/mcp-catalog'",
++    '',
++  ].join('\n')
++  const stripped = raw.replace(/^#.*$/gm, '').replace(/\s+/g, ' ').trim()
++  let next: string
++  if (stripped === '[]' || stripped === '') {
++    next = raw.replace(/\s*\[\s*\]\s*$/, '\n' + insert)
++  } else {
++    next = raw.replace(/\s*$/, '\n') + insert
++  }
++  writeFileSync(patchPath, next, 'utf8')
++}
++
+ /**
+  * Read a profile's manifest.
+  * @param binName - the diagnostic prefix on the thrown error.
+@@ -831,6 +1258,12 @@ export function loadProfile(
+     }
+     initProfile(dir, template.bundles, template.patchReload)
+   }
++  // dsh-gui: keep the MCP catalog browser half deployed on every profile load.
++  try {
++    ensureGuiBrowserPluginsProfileLayer(installAnchor, dir)
++  } catch (error) {
++    console.warn(`dsh-app-boot: mcp-catalog profile layer deploy skipped (${error instanceof Error ? error.message : String(error)})`)
++  }
+   normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+   return loadProfileDirectory(binName, dir, installAnchor, options)
+ }
+-- 
+2.53.0.windows.1
+
