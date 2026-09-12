@@ -5,14 +5,10 @@
   "officialRepo": "D:/dsh-official-015rc2",
   "upstream": "https://github.com/deepseek-ai/deepseek-harness.git",
   "registry": "https://registry.npmmirror.com",
-  "flatDir": "D:/dsh-015rc2-flat",
-  "workspace": "<dsh-gui-root>/Desktop/dsh-gui/dev/src/asar-unpacked",
-  "enhanceRepo": "<dsh-gui-root>/Desktop/dsh-gui/dev/enhance",
-  "resources": "<dsh-gui-root>/Desktop/dsh-gui/resources",
+  "flatDir": "D:/dsh-flat",
+  "workspace": "<dsh-gui-root>/dev/src/asar-unpacked",
+  "enhanceRepo": "<dsh-gui-root>/dev/enhance",
+  "resources": "<dsh-gui-root>/resources",
   "skipPatches": [],
-  "notes": {
-    "officialRepo": "官方仓库持久工作目录；gui/<tag> 分支 = 官方 tag + gui 补丁提交序列",
-    "skipPatches": "升级时跳过应用的补丁序号（如 lockfile 类，pnpm 会重新生成）",
-    "flatDir": "闭包拍平输出目录，由流水线清理重建"
-  }
+  "_note": "<dsh-gui-root> = 你本机的 dsh-gui 目录（含 dev/resources 的那个根目录）"
 }

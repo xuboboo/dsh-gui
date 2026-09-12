@@ -24,7 +24,7 @@ import { execSync, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = '<dsh-gui-root>/Desktop/dsh-gui'
+const ROOT = process.env.DSH_GUI_ROOT ?? path.resolve(here, '../..')  // <dsh-gui> 根目录；也可用环境变量 DSH_GUI_ROOT 指定
 const config = JSON.parse(fs.readFileSync(path.join(here, 'config.json'), 'utf8'))
 
 // ---- 参数 ----
