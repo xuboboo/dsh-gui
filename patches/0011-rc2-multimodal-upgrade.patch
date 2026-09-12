@@ -1,0 +1,56 @@
+--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+@@ -378,6 +378,8 @@
+ 	if (stat !== void 0) {
+-		if (!stat.isSymbolicLink()) throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`);
++		// dsh-gui: rc.5 时代修复——profile 依赖为真实目录(实体拷贝)时不再抛错,
++		// 直接跳过,让 heal 走种子 junction / 实体拷贝逻辑(上报 rc.2 后启动崩溃根治)。
++		if (!stat.isSymbolicLink()) return;
+ 		if (readlinkSync(link) === target) return;
+ 		unlinkSync(link);
+ 	}
++
++/* --- 以下是 rc.2 多模态升级适配(在已构建的 npm 包产物上修改) --- */
++
++--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
++@@ -409,0 +409,65 @@
++/**
++* Maintain the flat module fallback `$DSH_HOME/profiles/node_modules`. This
++* is the dsh-gui移植版(自 v1037/rc.5 的完整实现),旨在让 rc.2 在多模态打包环境下
++* 稳定启动:优先用 dsh-profile-seed 做 junction(毫秒级),Windows 下对 asar 内目标
++* 做实体拷贝(Node ESM 解析不了指向 asar 内文件的 junction)。
++* 移植的辅助函数:readHealStamp / manifestsMatch / copyPackageDir / fillMissingFiles
++* 及 heal 逻辑(处理 app.asar.unpacked 原生模块、isForeignPlatform 过滤、种子 junction)。
++* rc.2 官方版只做简单 symlink closure,缺失上述逻辑会导致新电脑首次启动 failure
++* (ERR_MODULE_NOT_FOUND / runtime exited with code 1)。
++*/
++
++--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-token-usage/lib/client.js
+++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-token-usage/lib/client.js
++@@ -7,0 +7,0 @@
++ 	// 移除对被删除的 @deepseek-ai/dsh-client-web-react 的 require
++-		let _deepseek_ai_dsh_client_web_react = require("@deepseek-ai/dsh-client-web-react");
++@@ -11,0 +11,13 @@
++		/** 内联 bindSnapshotSelector(替代被移除的 dsh-client-web-react):
++		* 直接用 React 的 useSyncExternalStore 绑定 snapshot store。
++		* 修复 rc.2 下 Token 用量统计插件 "Failed to load plugins ... missed the module table"。*/
++		function bindSnapshotSelector(w) {
++			const subscribe = (fn) => w.subscribe(fn);
++			const getSnapshot = () => w.getSnapshot();
++			return function useSelector(sel, eq) {
++				sel = sel || ((s) => s);
++				const snapshot = react.useSyncExternalStore(subscribe, getSnapshot);
++				return sel(snapshot);
++			};
++		}
++@@ -897,0 +910,0 @@
++-			const useSnapshot = (0, _deepseek_ai_dsh_client_web_react.bindSnapshotSelector)(controller.store);
+++			const useSnapshot = bindSnapshotSelector(controller.store);
++
++--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-token-usage/package.json
+++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-token-usage/package.json
++@@ -57,0 +57,0 @@
++-    "@deepseek-ai/dsh-client-web-react": "workspace:^",
++@@ -70,0 +70,0 @@
++-    "@deepseek-ai/dsh-client-web-react": "workspace:^",
